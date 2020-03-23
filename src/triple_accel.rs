@@ -25,7 +25,7 @@ pub fn hamming_naive(a: &[u8], b: &[u8]) -> u32 {
 // (u8 has looser alignment requirements than u128)
 // then, this vector can be easily converted back to u8 later
 // mutable
-#[inline(always)]
+#[inline]
 pub fn alloc_str(len: usize) -> Vec<u8> {
     let words_len = (len >> 4) + (if (len & 15) > 0 {1} else {0});
     let words = vec![0u128; words_len];
@@ -41,7 +41,7 @@ pub fn alloc_str(len: usize) -> Vec<u8> {
 }
 
 // directly copy from one string to another
-#[inline(always)]
+#[inline]
 pub fn fill_str(dest: &mut [u8], src: &[u8]) {
     assert!(dest.len() >= src.len());
 
@@ -137,14 +137,6 @@ unsafe fn hamming_simd_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
 
     res
 }
-
-// naive
-// bounded fast
-// bounded fast, equal length
-// exp search for k
-// search
-// simd-based bounded fast
-// simd-based search
 
 pub fn levenshtein_simd(a: &[u8], a_len: usize, b: &[u8], b_len: usize) -> u32 {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -244,17 +236,16 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
 
     let len_diff = b_len - a_len;
     let len = a_len + b_len + 1;
+    let len_div2 = (len >> 1) + (len & 1);
+    let ends_with_k2 = len & 1 == 0;
     // every diff between the length of a and b results in a shift from the main diagonal
     let final_idx = {
-        if len & 1 == 0 { // divisible by 2, ends with state = true, k2
+        if ends_with_k2 { // divisible by 2, ends with k2
             k2_div2 + ((len_diff - 1) >> 1)
-        }else{ // not divisible by 2, ends with state = false, k1
+        }else{ // not divisible by 2, ends with k1
             k1_div2 + (len_diff >> 1)
         }
     };
-
-    // state alternates between k1 and k2 diagonals
-    let mut state = false;
 
     // example: allow k = 2 edits for two strings of length 3
     //
@@ -264,14 +255,14 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
     //     */* xx
     //
     // each (anti) diagonal is represented with '*' or '/'
-    // state = true: '/', use k2 = 2
-    // state = false: '*', use k1 = 3
+    // '/', use k2 = 2
+    // '*', use k1 = 3
     // 'x' represents cells not in the "traditional" dp array
     //
     // dp2 is one diagonal before current
     // dp1 is two diagonals before current
     // we are trying to calculate the current diagonal
-    // note that a state = false '*' dp diagonal has its center cell on the main diagonal
+    // note that a k1 '*' dp diagonal has its center cell on the main diagonal
     //
     // the a windows and b windows are queues of a fixed length
     // a is reversed, so that elementwise comparison can be done between a and b
@@ -288,85 +279,83 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
     // note that there will be left over cells not filled in the SIMD vector
     // this is because k1 and k2 are not long enough
     // all of these empty cells should be at the end of the SIMD vectors
+    //
+    // each iteration of the loop below results in processing both a k1 diagonal and a k2 diagonal
+    // this could be done with an alternating state flag but it is unrolled for less branching
 
-    for _i in 2..len {
+    for _i in 1..len_div2 {
+        // move indexes in strings forward
+        k1_idx += 1;
+        k2_idx += 1;
+
         // move windows for the strings a and b
-        if state {
-            k2_idx += 1;
+        a_k1_window = shift_right_x86_avx2(a_k1_window);
 
-            // right shift
-            a_k2_window = shift_right_x86_avx2(a_k2_window);
-
-            if k2_idx < a_len {
-                a_k2_window = _mm256_insert_epi8(a_k2_window, a[k2_idx] as i8, 0i32);
-            }
-
-            // left shift
-            b_k2_window = shift_left_x86_avx2(b_k2_window);
-
-            if k2_idx < b_len {
-                b_k2_window = _mm256_insert_epi8(b_k2_window, b[k2_idx] as i8, 29i32); // k2 - 1
-            }
-        }else{
-            k1_idx += 1;
-
-            // right shift
-            a_k1_window = shift_right_x86_avx2(a_k1_window);
-
-            if k1_idx < a_len {
-                a_k1_window = _mm256_insert_epi8(a_k1_window, a[k1_idx] as i8, 0i32);
-            }
-
-            // left shift
-            b_k1_window = shift_left_x86_avx2(b_k1_window);
-
-            if k1_idx < b_len {
-                b_k1_window = _mm256_insert_epi8(b_k1_window, b[k1_idx] as i8, 30i32); // k1 - 1
-            }
+        if k1_idx < a_len {
+            a_k1_window = _mm256_insert_epi8(a_k1_window, a[k1_idx] as i8, 0i32);
         }
 
-        let match_mask = {
-            if state { // shorter, k2
-                _mm256_cmpeq_epi8(a_k2_window, b_k2_window)
-            }else{ // longer, k1
-                _mm256_cmpeq_epi8(a_k1_window, b_k1_window)
-            }
-        };
+        b_k1_window = shift_left_x86_avx2(b_k1_window);
 
+        if k1_idx < b_len {
+            b_k1_window = _mm256_insert_epi8(b_k1_window, b[k1_idx] as i8, 30i32); // k1 - 1
+        }
+
+        a_k2_window = shift_right_x86_avx2(a_k2_window);
+
+        if k2_idx < a_len {
+            a_k2_window = _mm256_insert_epi8(a_k2_window, a[k2_idx] as i8, 0i32);
+        }
+
+        b_k2_window = shift_left_x86_avx2(b_k2_window);
+
+        if k2_idx < b_len {
+            b_k2_window = _mm256_insert_epi8(b_k2_window, b[k2_idx] as i8, 29i32); // k2 - 1
+        }
+
+        // (anti) diagonal that matches in the a and b windows
+        let match_mask_k1 = _mm256_cmpeq_epi8(a_k1_window, b_k1_window);
         // add ones to cells that have mismatching characters from a and b
-        let sub = _mm256_adds_epi8(dp1, _mm256_andnot_si256(match_mask, ones));
-
-        let a_gap = {
-            if state { // shorter, k2
-                // left shift
-                let mut a_gap_prev = shift_left_x86_avx2(dp2);
-                a_gap_prev = _mm256_insert_epi8(a_gap_prev, 127i8, 31i32); // k1
-                _mm256_adds_epi8(a_gap_prev, ones)
-            }else{ // longer, k1
-                _mm256_adds_epi8(dp2, ones)
-            }
-        };
-
-        let b_gap = {
-            if state { // shorter, k2
-                _mm256_adds_epi8(dp2, ones)
-            }else{ // longer, k1
-                // right shift
-                let mut b_gap_prev = shift_right_x86_avx2(dp2);
-                b_gap_prev = _mm256_insert_epi8(b_gap_prev, 127i8, 0i32);
-                _mm256_adds_epi8(b_gap_prev, ones)
-            }
+        let sub_k1 = _mm256_adds_epi8(dp1, _mm256_andnot_si256(match_mask_k1, ones));
+        // cost of gaps in a
+        let a_gap_k1 = _mm256_adds_epi8(dp2, ones);
+        // cost of gaps in b
+        let b_gap_k1 = {
+            let mut b_gap_prev = shift_right_x86_avx2(dp2);
+            b_gap_prev = _mm256_insert_epi8(b_gap_prev, 127i8, 0i32);
+            _mm256_adds_epi8(b_gap_prev, ones)
         };
 
         dp1 = dp2;
         // min of the cost of all three edit operations
-        dp2 = _mm256_min_epi8(sub, _mm256_min_epi8(a_gap, b_gap));
+        dp2 = _mm256_min_epi8(sub_k1, _mm256_min_epi8(a_gap_k1, b_gap_k1));
 
-        state = !state;
+        // (anti) diagonal that matches in the a and b windows
+        let match_mask_k2 = _mm256_cmpeq_epi8(a_k2_window, b_k2_window);
+        // add ones to cells that have mismatching characters from a and b
+        let sub_k2 = _mm256_adds_epi8(dp1, _mm256_andnot_si256(match_mask_k2, ones));
+        // cost of gaps in b
+        let b_gap_k2 = _mm256_adds_epi8(dp2, ones);
+        // cost of gaps in a
+        let a_gap_k2 = {
+            let mut a_gap_prev = shift_left_x86_avx2(dp2);
+            a_gap_prev = _mm256_insert_epi8(a_gap_prev, 127i8, 31i32); // k1
+            _mm256_adds_epi8(a_gap_prev, ones)
+        };
+
+        dp1 = dp2;
+        // min of the cost of all three edit operations
+        dp2 = _mm256_min_epi8(sub_k2, _mm256_min_epi8(a_gap_k2, b_gap_k2));
     }
 
     let mut final_arr = [0u8; 32];
-    _mm256_storeu_si256(final_arr.as_mut_ptr() as *mut __m256i, dp2);
+
+    if ends_with_k2 {
+        _mm256_storeu_si256(final_arr.as_mut_ptr() as *mut __m256i, dp2);
+    }else{
+        _mm256_storeu_si256(final_arr.as_mut_ptr() as *mut __m256i, dp1);
+    }
+
     final_arr[final_idx] as u32
 }
 

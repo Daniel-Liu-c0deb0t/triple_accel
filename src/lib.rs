@@ -15,8 +15,8 @@ mod tests {
         let mut b = alloc_str(b_str.len());
         fill_str(&mut b, b_str);
 
-        let h_dist_naive = hamming_naive(&a, &b);
-        assert!(h_dist_naive == 1);
+        let dist = hamming_naive(&a, &b);
+        assert!(dist == 1);
     }
 
     #[test]
@@ -30,8 +30,8 @@ mod tests {
         let mut b = alloc_str(b_str.len());
         fill_str(&mut b, b_str);
 
-        let h_dist_words = hamming_words(&a, &b);
-        assert!(h_dist_words == 1);
+        let dist = hamming_words(&a, &b);
+        assert!(dist == 1);
     }
 
     #[test]
@@ -45,17 +45,36 @@ mod tests {
         let mut b = alloc_str(b_str.len());
         fill_str(&mut b, b_str);
 
-        let h_dist_simd = hamming_simd(&a, &b);
-        assert!(h_dist_simd == 1);
+        let dist = hamming_simd(&a, &b);
+        assert!(dist == 1);
     }
 
     #[test]
     fn test_basic_levenshtein_simd() {
-        let a = b"abcde";
-        let b = b" ab cde";
+        let a1 = b"abcde";
+        let b1 = b" ab cde";
+        let mut dist = levenshtein_simd(a1, a1.len(), b1, b1.len());
+        assert!(dist == 2);
 
-        let l_dist_simd = levenshtein_simd(a, a.len(), b, b.len());
-        assert!(l_dist_simd == 2);
+        let a2 = b"abcde";
+        let b2 = b"";
+        dist = levenshtein_simd(a2, a2.len(), b2, b2.len());
+        assert!(dist == 5);
+
+        let a3 = b"abcde";
+        let b3 = b"abcdee";
+        dist = levenshtein_simd(a3, a3.len(), b3, b3.len());
+        assert!(dist == 1);
+
+        let a4 = b"abcde";
+        let b4 = b"acde";
+        dist = levenshtein_simd(a4, a4.len(), b4, b4.len());
+        assert!(dist == 1);
+
+        let a5 = b"abcde";
+        let b5 = b"abbde";
+        dist = levenshtein_simd(a5, a5.len(), b5, b5.len());
+        assert!(dist == 1);
     }
 }
 
