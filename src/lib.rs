@@ -76,5 +76,32 @@ mod tests {
         dist = levenshtein_simd(a5, a5.len(), b5, b5.len());
         assert!(dist == 1);
     }
+
+    #[test]
+    fn test_basic_levenshtein_search_simd() {
+        let a1 = b"bcc";
+        let b1 = b"abcde";
+        let k1 = 1u32;
+        let mut res = levenshtein_search_simd(a1, a1.len(), b1, b1.len(), k1);
+        assert!(res == vec![Match{idx: 2, k: 1}, Match{idx: 3, k: 1}]);
+
+        let a2 = b"";
+        let b2 = b"";
+        let k2 = 1u32;
+        res = levenshtein_search_simd(a2, a2.len(), b2, b2.len(), k2);
+        assert!(res == vec![]);
+
+        let a3 = b"tast";
+        let b3 = b"testing 123 tating!";
+        let k3 = 1u32;
+        res = levenshtein_search_simd(a3, a3.len(), b3, b3.len(), k3);
+        assert!(res == vec![Match{idx: 3, k: 1}, Match{idx: 14, k: 1}]);
+
+        let a4 = b"tst";
+        let b4 = b"testing 123 tasting!";
+        let k4 = 1u32;
+        res = levenshtein_search_simd(a4, a4.len(), b4, b4.len(), k4);
+        assert!(res == vec![Match{idx: 3, k: 1}, Match{idx: 15, k: 1}]);
+    }
 }
 

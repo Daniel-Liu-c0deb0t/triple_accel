@@ -359,7 +359,13 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
     final_arr[final_idx] as u32
 }
 
-pub fn levenshtein_search_simd(needle: &[u8], needle_len: usize, haystack: &[u8], haystack_len: usize, k: u32) -> u32 {
+#[derive(Debug, PartialEq)]
+pub struct Match {
+    pub idx: usize,
+    pub k: u32
+}
+
+pub fn levenshtein_search_simd(needle: &[u8], needle_len: usize, haystack: &[u8], haystack_len: usize, k: u32) -> Vec<Match> {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
@@ -374,11 +380,15 @@ pub fn levenshtein_search_simd(needle: &[u8], needle_len: usize, haystack: &[u8]
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, haystack: &[u8], haystack_len: usize, k: u32) -> Vec<u32> {
+unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, haystack: &[u8], haystack_len: usize, k: u32) -> Vec<Match> {
     assert!(needle_len <= 32);
 
-    let dp1 = _mm256_set1_epi8(127i8);
-    let dp2 = _mm256_set1_epi8(127i8);
+    if needle_len == 0 {
+        return vec![];
+    }
+
+    let mut dp1 = _mm256_set1_epi8(127i8);
+    let mut dp2 = _mm256_set1_epi8(127i8);
     dp2 = _mm256_insert_epi8(dp2, 1i8, 31i32); // last cell
 
     let ones = _mm256_set1_epi8(1i8);
@@ -387,13 +397,13 @@ unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, hay
     let final_idx = 32 - needle_len;
 
     let mut dp_arr = [0u8; 32];
-    let mut dp_arr_ptr = dp_arr.as_mut_ptr() as *mut __m256i;
+    let dp_arr_ptr = dp_arr.as_mut_ptr() as *mut __m256i;
     let mut res = Vec::new();
 
     let needle_window = {
         let mut needle_window_arr = [0u8; 32];
 
-        for i in std::cmp::min(needle_len, 32) {
+        for i in 0..std::cmp::min(needle_len, 32) {
             needle_window_arr[31 - i] = needle[i];
         }
 
@@ -401,19 +411,22 @@ unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, hay
     };
 
     let mut haystack_window = _mm256_setzero_si256();
-    let mut haystack_idx = 0i32;
+    let mut haystack_idx = 0usize;
 
     for i in 1..len {
         haystack_window = shift_left_x86_avx2(haystack_window);
-        haystack_window = _mm256_insert_epi8(haystack_window, haystack[haystack_idx] as i8, 31i32);
-        haystack_idx += 1;
+
+        if haystack_idx < haystack_len {
+            haystack_window = _mm256_insert_epi8(haystack_window, haystack[haystack_idx] as i8, 31i32);
+            haystack_idx += 1;
+        }
 
         let match_mask = _mm256_cmpeq_epi8(needle_window, haystack_window);
 
-        let mut sub = _mm256_insert_epi8(shift_left_x86_avx2(dp1), 0i8, 31i32);
-        sub = _mm256_adds_epi8(sub, _mm256_andnot_epi8(match_mask, ones));
+        let mut sub = shift_left_x86_avx2(dp1); // zeros are shifted in
+        sub = _mm256_adds_epi8(sub, _mm256_andnot_si256(match_mask, ones));
 
-        let mut a_gap = _mm256_insert_epi8(shift_left_x86_avx2(dp2), 0i8, 31i32);
+        let mut a_gap = shift_left_x86_avx2(dp2); // zeros are shifted in
         a_gap = _mm256_adds_epi8(a_gap, ones);
 
         let b_gap = _mm256_adds_epi8(dp2, ones);
@@ -428,7 +441,7 @@ unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, hay
             let final_res = dp_arr[final_idx] as u32;
 
             if final_res <= k {
-                res.push(final_res);
+                res.push(Match{idx: i - needle_len, k: final_res});
             }
         }
     }
