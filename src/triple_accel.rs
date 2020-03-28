@@ -233,6 +233,7 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
     let mut k2_idx = k2_div2 - 1;
 
     let ones = _mm256_set1_epi8(1i8);
+    let twos = _mm256_set1_epi8(2i8);
 
     let len_diff = b_len - a_len;
     let len = a_len + b_len + 1;
@@ -392,6 +393,7 @@ unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, hay
     dp2 = _mm256_insert_epi8(dp2, 1i8, 31i32); // last cell
 
     let ones = _mm256_set1_epi8(1i8);
+    let twos = _mm256_set1_epi8(2i8);
 
     let len = haystack_len + needle_len;
     let final_idx = 32 - needle_len;
@@ -457,6 +459,21 @@ unsafe fn print_x86_avx2(a: &str, b: __m256i){
     let mut arr = [0u8; 32];
     _mm256_storeu_si256(arr.as_mut_ptr() as *mut __m256i, b);
     println!("{}:\t{:?}", a, arr);
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn triple_argmin_x86_avx2(sub: __m256i, a_gap: __m256i, b_gap: __m256i, a_gap_arg: __m256i, b_gap_arg: __m256i) -> (__m256i, __m256i) {
+    let mut res_min = _mm256_min_epi8(a_gap, b_gap);
+    let a_gap_mask = _mm256_cmpeq_epi8(res_min, a_gap);
+    let mut res_arg = _mm256_blendv_epi8(b_gap_arg, a_gap_arg, a_gap_mask);
+
+    res_min = _mm256_min_epi8(sub, res_min);
+    let sub_gap_mask = _mm256_cmpeq_epi8(res_min, sub);
+    res_arg = _mm256_andnot_si256(sub_gap_mask, res_arg); // substitution arguments will automatically be zero
+
+    return (res_min, res_arg);
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
