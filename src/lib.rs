@@ -83,7 +83,7 @@ mod tests {
         let b1 = b"abcde";
         let k1 = 1u32;
         let mut res = levenshtein_search_simd(a1, a1.len(), b1, b1.len(), k1);
-        assert!(res == vec![Match{idx: 2, k: 1}, Match{idx: 3, k: 1}]);
+        assert!(res == vec![Match{start: 1, end: 2, k: 1}, Match{start: 1, end: 3, k: 1}]);
 
         let a2 = b"";
         let b2 = b"";
@@ -95,13 +95,13 @@ mod tests {
         let b3 = b"testing 123 tating!";
         let k3 = 1u32;
         res = levenshtein_search_simd(a3, a3.len(), b3, b3.len(), k3);
-        assert!(res == vec![Match{idx: 3, k: 1}, Match{idx: 14, k: 1}]);
+        assert!(res == vec![Match{start: 0, end: 3, k: 1}, Match{start: 12, end: 14, k: 1}]);
 
         let a4 = b"tst";
         let b4 = b"testing 123 tasting!";
         let k4 = 1u32;
         res = levenshtein_search_simd(a4, a4.len(), b4, b4.len(), k4);
-        assert!(res == vec![Match{idx: 3, k: 1}, Match{idx: 15, k: 1}]);
+        assert!(res == vec![Match{start: 1, end: 3, k: 1}, Match{start: 13, end: 15, k: 1}]);
     }
 }
 

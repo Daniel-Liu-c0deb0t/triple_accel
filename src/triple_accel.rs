@@ -362,7 +362,8 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
 
 #[derive(Debug, PartialEq)]
 pub struct Match {
-    pub idx: usize,
+    pub start: usize,
+    pub end: usize,
     pub k: u32
 }
 
@@ -392,14 +393,20 @@ unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, hay
     let mut dp2 = _mm256_set1_epi8(127i8);
     dp2 = _mm256_insert_epi8(dp2, 1i8, 31i32); // last cell
 
+    // save length instead of start idx due to int size constraints
+    let mut length1 = _mm256_setzero_si256();
+    let mut length2 = _mm256_setzero_si256();
+
     let ones = _mm256_set1_epi8(1i8);
-    let twos = _mm256_set1_epi8(2i8);
 
     let len = haystack_len + needle_len;
     let final_idx = 32 - needle_len;
 
     let mut dp_arr = [0u8; 32];
     let dp_arr_ptr = dp_arr.as_mut_ptr() as *mut __m256i;
+    let mut length_arr = [0u8; 32];
+    let length_arr_ptr = length_arr.as_mut_ptr() as *mut __m256i;
+
     let mut res = Vec::new();
 
     let needle_window = {
@@ -428,22 +435,35 @@ unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, hay
         let mut sub = shift_left_x86_avx2(dp1); // zeros are shifted in
         sub = _mm256_adds_epi8(sub, _mm256_andnot_si256(match_mask, ones));
 
+        let sub_length = _mm256_adds_epi8(shift_left_x86_avx2(length1), ones);
+
         let mut a_gap = shift_left_x86_avx2(dp2); // zeros are shifted in
         a_gap = _mm256_adds_epi8(a_gap, ones);
 
+        let a_gap_length = shift_left_x86_avx2(length2);
+
         let b_gap = _mm256_adds_epi8(dp2, ones);
 
+        let b_gap_length = _mm256_adds_epi8(length2, ones);
+
         dp1 = dp2;
-        dp2 = _mm256_min_epi8(sub, _mm256_min_epi8(a_gap, b_gap));
+        length1 = length2;
+
+        let min = triple_min_length_x86_avx2(sub, a_gap, b_gap, sub_length, a_gap_length, b_gap_length);
+        dp2 = min.0;
+        length2 = min.1;
 
         if i >= needle_len {
-            // manually storing the dp array is necessary
+            // manually storing the dp and length arrays is necessary
             // because the accessed index is not a compile time constant
             _mm256_storeu_si256(dp_arr_ptr, dp2);
             let final_res = dp_arr[final_idx] as u32;
 
+            _mm256_storeu_si256(length_arr_ptr, length2);
+
             if final_res <= k {
-                res.push(Match{idx: i - needle_len, k: final_res});
+                let end_idx = i - needle_len;
+                res.push(Match{start: end_idx + 1 - (length_arr[final_idx] as usize), end: end_idx, k: final_res});
             }
         }
     }
@@ -470,10 +490,25 @@ unsafe fn triple_argmin_x86_avx2(sub: __m256i, a_gap: __m256i, b_gap: __m256i, a
     let mut res_arg = _mm256_blendv_epi8(b_gap_arg, a_gap_arg, a_gap_mask);
 
     res_min = _mm256_min_epi8(sub, res_min);
-    let sub_gap_mask = _mm256_cmpeq_epi8(res_min, sub);
-    res_arg = _mm256_andnot_si256(sub_gap_mask, res_arg); // substitution arguments will automatically be zero
+    let sub_mask = _mm256_cmpeq_epi8(res_min, sub);
+    res_arg = _mm256_andnot_si256(sub_mask, res_arg); // substitution arguments will automatically be zero
 
     return (res_min, res_arg);
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
+#[target_feature(enable = "avx2")]
+unsafe fn triple_min_length_x86_avx2(sub: __m256i, a_gap: __m256i, b_gap: __m256i, sub_length: __m256i, a_gap_length: __m256i, b_gap_length: __m256i) -> (__m256i, __m256i) {
+    let mut res_min = _mm256_min_epi8(a_gap, b_gap);
+    let a_gap_mask = _mm256_cmpeq_epi8(res_min, a_gap);
+    let mut res_length = _mm256_blendv_epi8(b_gap_length, a_gap_length, a_gap_mask);
+
+    res_min = _mm256_min_epi8(sub, res_min);
+    let sub_mask = _mm256_cmpeq_epi8(res_min, sub);
+    res_length = _mm256_blendv_epi8(res_length, sub_length, sub_mask);
+
+    return (res_min, res_length);
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
