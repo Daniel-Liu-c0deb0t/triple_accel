@@ -83,6 +83,27 @@ mod tests {
     }
 
     #[test]
+    fn test_trace_on_levenshtein_simd() {
+        let a1 = b"abcde";
+        let b1 = b" ab cde";
+        let mut res = levenshtein_simd(a1, a1.len(), b1, b1.len(), true);
+        assert!(res.0 == 2);
+        assert!(res.1.unwrap() == vec![Edit::AGap, Edit::Match, Edit::Match, Edit::AGap, Edit::Match, Edit::Match, Edit::Match]);
+
+        let a2 = b"abcde";
+        let b2 = b"";
+        res = levenshtein_simd(a2, a2.len(), b2, b2.len(), true);
+        assert!(res.0 == 5);
+        assert!(res.1.unwrap() == vec![Edit::BGap, Edit::BGap, Edit::BGap, Edit::BGap, Edit::BGap]);
+
+        let a3 = b"abcde";
+        let b3 = b"abcce";
+        res = levenshtein_simd(a3, a3.len(), b3, b3.len(), true);
+        assert!(res.0 == 1);
+        assert!(res.1.unwrap() == vec![Edit::Match, Edit::Match, Edit::Match, Edit::Mismatch, Edit::Match]);
+    }
+
+    #[test]
     fn test_basic_levenshtein_search_simd() {
         let a1 = b"bcc";
         let b1 = b"abcde";

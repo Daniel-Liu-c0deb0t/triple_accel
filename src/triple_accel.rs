@@ -138,8 +138,10 @@ unsafe fn hamming_simd_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
     res
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Edit {
-    Sub,
+    Match,
+    Mismatch,
     AGap,
     BGap
 }
@@ -259,26 +261,32 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
     let mut traceback_arr = if trace_on {vec![[0u8; 32]; len + (len & 1)]} else {vec![]};
 
     if trace_on {
-        traceback_arr[1][k2_div2 - 1] = 1u8;
-        traceback_arr[1][k2_div2] = 2u8;
+        traceback_arr[1][k2_div2 - 1] = 2u8;
+        traceback_arr[1][k2_div2] = 1u8;
     }
 
     // example: allow k = 2 edits for two strings of length 3
-    //
-    // xx */*
-    //  x /*/*
-    //    */*/ x
-    //     */* xx
+    //        .j..  
+    //        -b--   
+    // . | xx */*
+    // i a  x /*/*
+    // . |    */*/ x
+    // . |     */* xx
     //
     // each (anti) diagonal is represented with '*' or '/'
     // '/', use k2 = 2
     // '*', use k1 = 3
     // 'x' represents cells not in the "traditional" dp array
+    // these out of bounds dp cells are shown because they represent
+    // a horizontal sliding window of length 5 (2 * k + 1)
     //
     // dp2 is one diagonal before current
     // dp1 is two diagonals before current
-    // we are trying to calculate the current diagonal
+    // we are trying to calculate the "current" diagonal
     // note that a k1 '*' dp diagonal has its center cell on the main diagonal
+    // in general, the diagonals are centered on the main diagonal
+    // each diagonal is represented using a 256-bit vector
+    // each vector goes from bottom-left to top-right
     //
     // the a windows and b windows are queues of a fixed length
     // a is reversed, so that elementwise comparison can be done between a and b
@@ -298,6 +306,10 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
     //
     // each iteration of the loop below results in processing both a k1 diagonal and a k2 diagonal
     // this could be done with an alternating state flag but it is unrolled for less branching
+    //
+    // note: in traditional dp array
+    // dp[i][j] -> dp[i + 1][j] is a gap in string b
+    // dp[i][j] -> dp[i][j + 1] is a gap in string a
 
     for i in 1..len_div2 {
         // move indexes in strings forward
@@ -334,13 +346,13 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
         // add ones to cells that have mismatching characters from a and b
         let sub_k1 = _mm256_adds_epi8(dp1, _mm256_andnot_si256(match_mask_k1, ones));
         // cost of gaps in a
-        let a_gap_k1 = _mm256_adds_epi8(dp2, ones);
-        // cost of gaps in b
-        let b_gap_k1 = {
-            let mut b_gap_prev = shift_right_x86_avx2(dp2);
-            b_gap_prev = _mm256_insert_epi8(b_gap_prev, 127i8, 0i32);
-            _mm256_adds_epi8(b_gap_prev, ones)
+        let a_gap_k1 = {
+            let mut a_gap_prev = shift_right_x86_avx2(dp2);
+            a_gap_prev = _mm256_insert_epi8(a_gap_prev, 127i8, 0i32);
+            _mm256_adds_epi8(a_gap_prev, ones)
         };
+        // cost of gaps in b
+        let b_gap_k1 = _mm256_adds_epi8(dp2, ones);
 
         dp1 = dp2;
 
@@ -358,13 +370,13 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
         // add ones to cells that have mismatching characters from a and b
         let sub_k2 = _mm256_adds_epi8(dp1, _mm256_andnot_si256(match_mask_k2, ones));
         // cost of gaps in b
-        let b_gap_k2 = _mm256_adds_epi8(dp2, ones);
-        // cost of gaps in a
-        let a_gap_k2 = {
-            let mut a_gap_prev = shift_left_x86_avx2(dp2);
-            a_gap_prev = _mm256_insert_epi8(a_gap_prev, 127i8, 31i32); // k1
-            _mm256_adds_epi8(a_gap_prev, ones)
+        let b_gap_k2 = {
+            let mut b_gap_prev = shift_left_x86_avx2(dp2);
+            b_gap_prev = _mm256_insert_epi8(b_gap_prev, 127i8, 31i32); // k1
+            _mm256_adds_epi8(b_gap_prev, ones)
         };
+        // cost of gaps in a
+        let a_gap_k2 = _mm256_adds_epi8(dp2, ones);
 
         dp1 = dp2;
 
@@ -387,14 +399,19 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
     }
 
     if trace_on {
-        (final_arr[final_idx] as u32, Some(traceback(&traceback_arr, final_idx, swap, ends_with_k2)))
+        (final_arr[final_idx] as u32, Some(traceback(&traceback_arr, final_idx, a, a_len, b, b_len, swap, ends_with_k2)))
     }else{
         (final_arr[final_idx] as u32, None)
     }
 }
 
-fn traceback(arr: &[[u8; 32]], mut idx: usize, swap: bool, ends_with_k2: bool) -> Vec<Edit> {
-    let mut arr_idx = arr.len() - 1 - (if ends_with_k2 {0} else {1});
+fn traceback(arr: &[[u8; 32]], mut idx: usize, a: &[u8], a_len: usize, b: &[u8], b_len: usize, swap: bool, mut is_k2: bool) -> Vec<Edit> {
+    // keep track of position in traditional dp array and strings
+    let mut i = a_len;
+    let mut j = b_len;
+
+    // last diagonal may overshoot, so ignore it
+    let mut arr_idx = arr.len() - 1 - (if is_k2 {0} else {1});
     let mut res = vec![];
 
     while arr_idx > 0 {
@@ -402,17 +419,32 @@ fn traceback(arr: &[[u8; 32]], mut idx: usize, swap: bool, ends_with_k2: bool) -
 
         match edit {
             0u8 => { // match/mismatch
+                res.push(if a[i - 1] == b[j - 1] {Edit::Match} else {Edit::Mismatch});
                 arr_idx -= 2;
-                res.push(Edit::Sub);
+                i -= 1;
+                j -= 1;
             },
             1u8 => { // a gap
+                res.push(if swap {Edit::BGap} else {Edit::AGap}); // account for the swap in the beginning
                 arr_idx -= 1;
-                idx += 1;
-                res.push(if swap {Edit::BGap} else {Edit::AGap});
+
+                if !is_k2 {
+                    idx -= 1;
+                }
+
+                j -= 1;
+                is_k2 = !is_k2; // must account for alternating k1/k2 diagonals
             },
             2u8 => { // b gap
-                arr_idx -= 1;
                 res.push(if swap {Edit::AGap} else {Edit::BGap});
+                arr_idx -= 1;
+
+                if is_k2 {
+                    idx += 1;
+                }
+
+                i -= 1;
+                is_k2 = !is_k2;
             },
             _ => panic!("This should not be happening!")
         }
@@ -474,6 +506,7 @@ unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, hay
     let needle_window = {
         let mut needle_window_arr = [0u8; 32];
 
+        // needle window is in reverse order
         for i in 0..std::cmp::min(needle_len, 32) {
             needle_window_arr[31 - i] = needle[i];
         }
@@ -484,7 +517,22 @@ unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, hay
     let mut haystack_window = _mm256_setzero_si256();
     let mut haystack_idx = 0usize;
 
+    //         ..j...
+    //         --h---
+    // . |     //////xxxx
+    // . |    x//////xxx
+    // i n   xx//////xx
+    // . |  xxx//////x
+    // . | xxxx//////
+    //
+    // 'n' = needle, 'h' = haystack
+    // each (anti) diagonal is denoted using '/' and 'x'
+    // 'x' marks cells that are not in the traditional dp array
+    // every (anti) diagonal is calculated simultaneously using a 256-bit vector
+    // note: each vector goes from bottom-left to top-right
+
     for i in 1..len {
+        // shift the haystack window
         haystack_window = shift_left_x86_avx2(haystack_window);
 
         if haystack_idx < haystack_len {
@@ -494,24 +542,27 @@ unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, hay
 
         let match_mask = _mm256_cmpeq_epi8(needle_window, haystack_window);
 
+        // match/mismatch
         let mut sub = shift_left_x86_avx2(dp1); // zeros are shifted in
         sub = _mm256_adds_epi8(sub, _mm256_andnot_si256(match_mask, ones));
 
         let sub_length = _mm256_adds_epi8(shift_left_x86_avx2(length1), ones);
 
-        let mut a_gap = shift_left_x86_avx2(dp2); // zeros are shifted in
-        a_gap = _mm256_adds_epi8(a_gap, ones);
+        // gap in needle
+        let needle_gap = _mm256_adds_epi8(dp2, ones);
 
-        let a_gap_length = shift_left_x86_avx2(length2);
+        let needle_gap_length = _mm256_adds_epi8(length2, ones);
 
-        let b_gap = _mm256_adds_epi8(dp2, ones);
+        // gap in haystack
+        let mut haystack_gap = shift_left_x86_avx2(dp2); // zeros are shifted in
+        haystack_gap = _mm256_adds_epi8(haystack_gap, ones);
 
-        let b_gap_length = _mm256_adds_epi8(length2, ones);
+        let haystack_gap_length = shift_left_x86_avx2(length2);
 
         dp1 = dp2;
         length1 = length2;
 
-        let min = triple_min_length_x86_avx2(sub, a_gap, b_gap, sub_length, a_gap_length, b_gap_length);
+        let min = triple_min_length_x86_avx2(sub, needle_gap, haystack_gap, sub_length, needle_gap_length, haystack_gap_length);
         dp2 = min.0;
         length2 = min.1;
 
@@ -540,13 +591,20 @@ unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, hay
 unsafe fn print_x86_avx2(a: &str, b: __m256i){
     let mut arr = [0u8; 32];
     _mm256_storeu_si256(arr.as_mut_ptr() as *mut __m256i, b);
-    println!("{}:\t{:?}", a, arr);
+    print!("{}\t", a);
+
+    for i in 0..32 {
+        print!(" {:>3}", arr[i]);
+    }
+
+    println!();
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[inline]
 #[target_feature(enable = "avx2")]
 unsafe fn triple_argmin_x86_avx2(sub: __m256i, a_gap: __m256i, b_gap: __m256i, a_gap_arg: __m256i, b_gap_arg: __m256i) -> (__m256i, __m256i) {
+    // return the edit used in addition to doing a min operation
     let mut res_min = _mm256_min_epi8(a_gap, b_gap);
     let a_gap_mask = _mm256_cmpeq_epi8(res_min, a_gap);
     let mut res_arg = _mm256_blendv_epi8(b_gap_arg, a_gap_arg, a_gap_mask);
@@ -562,6 +620,7 @@ unsafe fn triple_argmin_x86_avx2(sub: __m256i, a_gap: __m256i, b_gap: __m256i, a
 #[inline]
 #[target_feature(enable = "avx2")]
 unsafe fn triple_min_length_x86_avx2(sub: __m256i, a_gap: __m256i, b_gap: __m256i, sub_length: __m256i, a_gap_length: __m256i, b_gap_length: __m256i) -> (__m256i, __m256i) {
+    // choose the length based on which edit is chosen during the min operation
     let mut res_min = _mm256_min_epi8(a_gap, b_gap);
     let a_gap_mask = _mm256_cmpeq_epi8(res_min, a_gap);
     let mut res_length = _mm256_blendv_epi8(b_gap_length, a_gap_length, a_gap_mask);
