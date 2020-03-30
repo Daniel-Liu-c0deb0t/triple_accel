@@ -53,28 +53,33 @@ mod tests {
     fn test_basic_levenshtein_simd() {
         let a1 = b"abcde";
         let b1 = b" ab cde";
-        let mut dist = levenshtein_simd(a1, a1.len(), b1, b1.len());
-        assert!(dist == 2);
+        let mut res = levenshtein_simd(a1, a1.len(), b1, b1.len(), false);
+        assert!(res.0 == 2);
+        assert!(res.1.is_none());
 
         let a2 = b"abcde";
         let b2 = b"";
-        dist = levenshtein_simd(a2, a2.len(), b2, b2.len());
-        assert!(dist == 5);
+        res = levenshtein_simd(a2, a2.len(), b2, b2.len(), false);
+        assert!(res.0 == 5);
+        assert!(res.1.is_none());
 
         let a3 = b"abcde";
         let b3 = b"abcdee";
-        dist = levenshtein_simd(a3, a3.len(), b3, b3.len());
-        assert!(dist == 1);
+        res = levenshtein_simd(a3, a3.len(), b3, b3.len(), false);
+        assert!(res.0 == 1);
+        assert!(res.1.is_none());
 
         let a4 = b"abcde";
         let b4 = b"acde";
-        dist = levenshtein_simd(a4, a4.len(), b4, b4.len());
-        assert!(dist == 1);
+        res = levenshtein_simd(a4, a4.len(), b4, b4.len(), false);
+        assert!(res.0 == 1);
+        assert!(res.1.is_none());
 
         let a5 = b"abcde";
         let b5 = b"abbde";
-        dist = levenshtein_simd(a5, a5.len(), b5, b5.len());
-        assert!(dist == 1);
+        res = levenshtein_simd(a5, a5.len(), b5, b5.len(), false);
+        assert!(res.0 == 1);
+        assert!(res.1.is_none());
     }
 
     #[test]

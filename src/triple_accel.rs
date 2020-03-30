@@ -138,11 +138,17 @@ unsafe fn hamming_simd_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
     res
 }
 
-pub fn levenshtein_simd(a: &[u8], a_len: usize, b: &[u8], b_len: usize) -> u32 {
+pub enum Edit {
+    Sub,
+    AGap,
+    BGap
+}
+
+pub fn levenshtein_simd(a: &[u8], a_len: usize, b: &[u8], b_len: usize, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {levenshtein_simd_x86_avx2(a, a_len, b, b_len)};
+            return unsafe {levenshtein_simd_x86_avx2(a, a_len, b, b_len, trace_on)};
         }
     }
 
@@ -153,9 +159,9 @@ pub fn levenshtein_simd(a: &[u8], a_len: usize, b: &[u8], b_len: usize) -> u32 {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8], b_old_len: usize) -> u32 {
+unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8], b_old_len: usize, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
     if a_old_len == 0 && b_old_len == 0 {
-        return 0u32;
+        return if trace_on {(0u32, Some(vec![]))} else {(0u32, None)};
     }
 
     // swap a and b so that a is shorter than b, if applicable
@@ -232,6 +238,7 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
     let mut k1_idx = k1_div2 - 1;
     let mut k2_idx = k2_div2 - 1;
 
+    // reusable constants
     let ones = _mm256_set1_epi8(1i8);
     let twos = _mm256_set1_epi8(2i8);
 
@@ -247,6 +254,14 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
             k1_div2 + (len_diff >> 1)
         }
     };
+
+    // 0 = match/mismatch, 1 = a gap, 2 = b gap
+    let mut traceback_arr = if trace_on {vec![[0u8; 32]; len + (len & 1)]} else {vec![]};
+
+    if trace_on {
+        traceback_arr[1][k2_div2 - 1] = 1u8;
+        traceback_arr[1][k2_div2] = 2u8;
+    }
 
     // example: allow k = 2 edits for two strings of length 3
     //
@@ -284,7 +299,7 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
     // each iteration of the loop below results in processing both a k1 diagonal and a k2 diagonal
     // this could be done with an alternating state flag but it is unrolled for less branching
 
-    for _i in 1..len_div2 {
+    for i in 1..len_div2 {
         // move indexes in strings forward
         k1_idx += 1;
         k2_idx += 1;
@@ -328,8 +343,15 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
         };
 
         dp1 = dp2;
+
         // min of the cost of all three edit operations
-        dp2 = _mm256_min_epi8(sub_k1, _mm256_min_epi8(a_gap_k1, b_gap_k1));
+        if trace_on {
+            let min = triple_argmin_x86_avx2(sub_k1, a_gap_k1, b_gap_k1, ones, twos);
+            dp2 = min.0;
+            _mm256_storeu_si256(traceback_arr[i << 1].as_mut_ptr() as *mut __m256i, min.1);
+        }else{
+            dp2 = _mm256_min_epi8(sub_k1, _mm256_min_epi8(a_gap_k1, b_gap_k1));
+        }
 
         // (anti) diagonal that matches in the a and b windows
         let match_mask_k2 = _mm256_cmpeq_epi8(a_k2_window, b_k2_window);
@@ -345,8 +367,15 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
         };
 
         dp1 = dp2;
+
         // min of the cost of all three edit operations
-        dp2 = _mm256_min_epi8(sub_k2, _mm256_min_epi8(a_gap_k2, b_gap_k2));
+        if trace_on {
+            let min = triple_argmin_x86_avx2(sub_k2, a_gap_k2, b_gap_k2, ones, twos);
+            dp2 = min.0;
+            _mm256_storeu_si256(traceback_arr[(i << 1) + 1].as_mut_ptr() as *mut __m256i, min.1);
+        }else{
+            dp2 = _mm256_min_epi8(sub_k2, _mm256_min_epi8(a_gap_k2, b_gap_k2));
+        }
     }
 
     let mut final_arr = [0u8; 32];
@@ -357,7 +386,40 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
         _mm256_storeu_si256(final_arr.as_mut_ptr() as *mut __m256i, dp1);
     }
 
-    final_arr[final_idx] as u32
+    if trace_on {
+        (final_arr[final_idx] as u32, Some(traceback(&traceback_arr, final_idx, swap, ends_with_k2)))
+    }else{
+        (final_arr[final_idx] as u32, None)
+    }
+}
+
+fn traceback(arr: &[[u8; 32]], mut idx: usize, swap: bool, ends_with_k2: bool) -> Vec<Edit> {
+    let mut arr_idx = arr.len() - 1 - (if ends_with_k2 {0} else {1});
+    let mut res = vec![];
+
+    while arr_idx > 0 {
+        let edit = arr[arr_idx][idx];
+
+        match edit {
+            0u8 => { // match/mismatch
+                arr_idx -= 2;
+                res.push(Edit::Sub);
+            },
+            1u8 => { // a gap
+                arr_idx -= 1;
+                idx += 1;
+                res.push(if swap {Edit::BGap} else {Edit::AGap});
+            },
+            2u8 => { // b gap
+                arr_idx -= 1;
+                res.push(if swap {Edit::AGap} else {Edit::BGap});
+            },
+            _ => panic!("This should not be happening!")
+        }
+    }
+
+    res.reverse();
+    res
 }
 
 #[derive(Debug, PartialEq)]
@@ -407,7 +469,7 @@ unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, hay
     let mut length_arr = [0u8; 32];
     let length_arr_ptr = length_arr.as_mut_ptr() as *mut __m256i;
 
-    let mut res = Vec::new();
+    let mut res = vec![];
 
     let needle_window = {
         let mut needle_window_arr = [0u8; 32];
