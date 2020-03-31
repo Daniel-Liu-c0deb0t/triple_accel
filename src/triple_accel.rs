@@ -6,6 +6,21 @@ use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
+#[derive(Debug, PartialEq)]
+pub struct Match {
+    pub start: usize, // inclusive
+    pub end: usize, // exclusive
+    pub k: u32
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Edit {
+    Match,
+    Mismatch,
+    AGap,
+    BGap
+}
+
 pub fn hamming_naive(a: &[u8], b: &[u8]) -> u32 {
     let len = a.len();
     assert!(len == b.len());
@@ -16,6 +31,31 @@ pub fn hamming_naive(a: &[u8], b: &[u8]) -> u32 {
         if a[i] != b[i] {
             res += 1;
         }
+    }
+
+    res
+}
+
+pub fn hamming_search_naive(needle: &[u8], needle_len: usize, haystack: &[u8], haystack_len: usize, k: u32) -> Vec<Match> {
+    assert!(needle_len <= haystack_len);
+
+    let mut res = vec![];
+    let len = haystack_len + 1 - needle_len;
+
+    'outer: for i in 0..len {
+        let mut final_res = 0u32;
+
+        for j in 0..needle_len {
+            if needle[j] != haystack[i + j] {
+                final_res += 1;
+            }
+
+            if final_res > k {
+                continue 'outer;
+            }
+        }
+
+        res.push(Match{start: i, end: i + needle_len, k: final_res});
     }
 
     res
@@ -136,14 +176,6 @@ unsafe fn hamming_simd_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
     }
 
     res
-}
-
-#[derive(Debug, PartialEq)]
-pub enum Edit {
-    Match,
-    Mismatch,
-    AGap,
-    BGap
 }
 
 pub fn levenshtein_simd(a: &[u8], a_len: usize, b: &[u8], b_len: usize, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
@@ -454,13 +486,6 @@ fn traceback(arr: &[[u8; 32]], mut idx: usize, a: &[u8], a_len: usize, b: &[u8],
     res
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Match {
-    pub start: usize,
-    pub end: usize,
-    pub k: u32
-}
-
 pub fn levenshtein_search_simd(needle: &[u8], needle_len: usize, haystack: &[u8], haystack_len: usize, k: u32) -> Vec<Match> {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -566,7 +591,7 @@ unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, hay
         dp2 = min.0;
         length2 = min.1;
 
-        if i >= needle_len {
+        if i >= needle_len - 1 {
             // manually storing the dp and length arrays is necessary
             // because the accessed index is not a compile time constant
             _mm256_storeu_si256(dp_arr_ptr, dp2);
@@ -575,8 +600,8 @@ unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, hay
             _mm256_storeu_si256(length_arr_ptr, length2);
 
             if final_res <= k {
-                let end_idx = i - needle_len;
-                res.push(Match{start: end_idx + 1 - (length_arr[final_idx] as usize), end: end_idx, k: final_res});
+                let end_idx = i + 1 - needle_len;
+                res.push(Match{start: end_idx - (length_arr[final_idx] as usize), end: end_idx, k: final_res});
             }
         }
     }
