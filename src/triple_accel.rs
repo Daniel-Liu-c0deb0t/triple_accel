@@ -178,17 +178,61 @@ unsafe fn hamming_simd_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
     res
 }
 
-unsafe fn hamming_search_simd(needle: &[u8], needle_len: usize, haystack: &[u8], haystack_len: usize, k: u32) -> Vec<Match> {
+pub fn hamming_search_simd(needle: &[u8], needle_len: usize, haystack: &[u8], haystack_len: usize, k: u32) -> Vec<Match> {
+    assert!(needle_len <= 32);
     assert!(needle_len <= haystack_len);
 
+    if needle_len == 0 {
+        return vec![];
+    }
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return unsafe {hamming_search_simd_x86_avx2(needle, needle_len, haystack, haystack_len, k)};
+        }
+    }
+
+    // todo: sse support and fallback
+
+    unimplemented!();
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn hamming_search_simd_x86_avx2(needle: &[u8], needle_len: usize, haystack: &[u8], haystack_len: usize, k: u32) -> Vec<Match> {
     let mut res = vec![];
-    let len = haystack.len() + 1 - needle.len();
+    let real_len = haystack_len + 1 - needle_len;
+    let len = std::cmp::min(haystack.len() + 1 - needle.len(), real_len);
     let needle_ptr = needle.as_ptr() as *const __m256i;
     let haystack_ptr = haystack.as_ptr();
+    let mask = (1 << needle_len) - 1;
 
+    // do blocks of 32 bytes at once
     for i in 0..len {
         let a = _mm256_loadu_si256(needle_ptr);
         let b = _mm256_loadu_si256(haystack_ptr.offset(i) as *const __m256i);
+        let r = _mm256_movemask_epi8(_mm256_cmpeq_epi8(a, b));
+        let final_res = ((~r) & mask).count_ones(); // mask out characters not in needle
+
+        if final_res <= k {
+            res.push(Match{start: i, end: i + needle_len, k: final_res});
+        }
+    }
+
+    // do leftover characters
+    'outer for i in len..real_len {
+        let final_res = 0u32;
+
+        for j in 0..needle_len {
+            if needle[j] != haystack[i + j] {
+                final_res += 1;
+            }
+
+            if final_res > k {
+                continue 'outer;
+            }
+        }
 
         res.push(Match{start: i, end: i + needle_len, k: final_res});
     }
@@ -200,11 +244,15 @@ pub fn levenshtein_naive(a: &[u8], a_len: usize, b: &[u8], b_len: usize, trace_o
 
 }
 
-pub fn levenshtein_naive_k(a: &[u8], a_len: usize, b: &[u8], b_len: usize, k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+pub fn levenshtein_naive(a: &[u8], a_len: usize, b: &[u8], b_len: usize, k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
 
 }
 
 pub fn levenshtein_simd(a: &[u8], a_len: usize, b: &[u8], b_len: usize, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+    if a_len == 0 && b_len == 0 {
+        return if trace_on {(0u32, Some(vec![]))} else {(0u32, None)};
+    }
+
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
@@ -220,10 +268,6 @@ pub fn levenshtein_simd(a: &[u8], a_len: usize, b: &[u8], b_len: usize, trace_on
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8], b_old_len: usize, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
-    if a_old_len == 0 && b_old_len == 0 {
-        return if trace_on {(0u32, Some(vec![]))} else {(0u32, None)};
-    }
-
     // swap a and b so that a is shorter than b, if applicable
     // makes operations later on slightly easier, since length of a <= length of b
     let swap = a_old_len > b_old_len;
@@ -565,6 +609,12 @@ pub fn levenshtein_search_naive(needle: &[u8], needle_len: usize, haystack: &[u8
 }
 
 pub fn levenshtein_search_simd(needle: &[u8], needle_len: usize, haystack: &[u8], haystack_len: usize, k: u32) -> Vec<Match> {
+    assert!(needle_len <= 32);
+
+    if needle_len == 0 {
+        return vec![];
+    }
+
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
@@ -580,12 +630,6 @@ pub fn levenshtein_search_simd(needle: &[u8], needle_len: usize, haystack: &[u8]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, haystack: &[u8], haystack_len: usize, k: u32) -> Vec<Match> {
-    assert!(needle_len <= 32);
-
-    if needle_len == 0 {
-        return vec![];
-    }
-
     let mut dp1 = _mm256_set1_epi8(127i8);
     let mut dp2 = _mm256_set1_epi8(127i8);
     dp2 = _mm256_insert_epi8(dp2, 1i8, 31i32); // last cell
