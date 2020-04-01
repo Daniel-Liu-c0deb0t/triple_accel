@@ -172,10 +172,36 @@ unsafe fn hamming_simd_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
         res += r.count_ones();
     }else{
         // this should not happen since a and b should be zero padded to a multiple of 128
-        unimplemented!();
+        panic!("This should not be happening!");
     }
 
     res
+}
+
+unsafe fn hamming_search_simd(needle: &[u8], needle_len: usize, haystack: &[u8], haystack_len: usize, k: u32) -> Vec<Match> {
+    assert!(needle_len <= haystack_len);
+
+    let mut res = vec![];
+    let len = haystack.len() + 1 - needle.len();
+    let needle_ptr = needle.as_ptr() as *const __m256i;
+    let haystack_ptr = haystack.as_ptr();
+
+    for i in 0..len {
+        let a = _mm256_loadu_si256(needle_ptr);
+        let b = _mm256_loadu_si256(haystack_ptr.offset(i) as *const __m256i);
+
+        res.push(Match{start: i, end: i + needle_len, k: final_res});
+    }
+
+    res
+}
+
+pub fn levenshtein_naive(a: &[u8], a_len: usize, b: &[u8], b_len: usize, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+
+}
+
+pub fn levenshtein_naive_k(a: &[u8], a_len: usize, b: &[u8], b_len: usize, k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+
 }
 
 pub fn levenshtein_simd(a: &[u8], a_len: usize, b: &[u8], b_len: usize, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
@@ -298,12 +324,11 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
     }
 
     // example: allow k = 2 edits for two strings of length 3
-    //        .j..  
-    //        -b--   
-    // . | xx */*
-    // i a  x /*/*
-    // . |    */*/ x
-    // . |     */* xx
+    //      -b--   
+    // | xx */*
+    // a  x /*/*
+    // |    */*/ x
+    // |     */* xx
     //
     // each (anti) diagonal is represented with '*' or '/'
     // '/', use k2 = 2
@@ -439,8 +464,8 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
 
 fn traceback(arr: &[[u8; 32]], mut idx: usize, a: &[u8], a_len: usize, b: &[u8], b_len: usize, swap: bool, mut is_k2: bool) -> Vec<Edit> {
     // keep track of position in traditional dp array and strings
-    let mut i = a_len;
-    let mut j = b_len;
+    let mut i = a_len; // index in a
+    let mut j = b_len; // index in b
 
     // last diagonal may overshoot, so ignore it
     let mut arr_idx = arr.len() - 1 - (if is_k2 {0} else {1});
@@ -483,6 +508,59 @@ fn traceback(arr: &[[u8; 32]], mut idx: usize, a: &[u8], a_len: usize, b: &[u8],
     }
 
     res.reverse();
+    res
+}
+
+pub fn levenshtein_search_naive(needle: &[u8], needle_len: usize, haystack: &[u8], haystack_len: usize, k: u32) -> Vec<Match> {
+    let len = needle_len + 1;
+    let mut dp1 = vec![0u32; len];
+    let mut dp2 = vec![0u32; len];
+    let mut length1 = vec![0u32; len];
+    let mut length2 = vec![0u32; len];
+    let mut res = vec![];
+
+    for i in 0..len {
+        dp1[i] = i;
+    }
+
+    if dp1[len - 1] <= k {
+        res.push(Match{start: 0, end: 0, k: dp1[len - 1]});
+    }
+
+    for i in 0..haystack_len {
+        dp2[0] = 0;
+        length2[0] = 0;
+
+        for j in 1..len {
+            let sub = dp1[j - 1] + (if needle[j - 1] == haystack[i] {0} else {1});
+            let a_gap = dp1[j] + 1;
+            let b_gap = dp2[j - 1] + 1;
+
+            dp2[j] = a_gap;
+            length2[j] = length1[j] + 1;
+
+            if b_gap < dp2[j] {
+                dp2[j] = b_gap;
+                length2[j] = length2[j - 1];
+            }
+
+            if sub <= dp2[j] {
+                dp2[j] = sub;
+                length2[j] = length1[j - 1] + 1;
+            }
+        }
+
+        let final_res = dp2[len - 1];
+
+        if final_res <= k {
+            res.push(Match{start: i + 1 - length2[len - 1], end: i + 1, k: final_res});
+        }
+
+        let temp = dp1;
+        dp1 = dp2;
+        dp2 = temp;
+    }
+
     res
 }
 
@@ -542,13 +620,13 @@ unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], needle_len: usize, hay
     let mut haystack_window = _mm256_setzero_si256();
     let mut haystack_idx = 0usize;
 
-    //         ..j...
-    //         --h---
-    // . |     //////xxxx
-    // . |    x//////xxx
-    // i n   xx//////xx
-    // . |  xxx//////x
-    // . | xxxx//////
+    //       ..i...
+    //       --h---
+    // |     //////xxxx
+    // |    x//////xxx
+    // n   xx//////xx
+    // |  xxx//////x
+    // | xxxx//////
     //
     // 'n' = needle, 'h' = haystack
     // each (anti) diagonal is denoted using '/' and 'x'
