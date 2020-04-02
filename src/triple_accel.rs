@@ -240,8 +240,88 @@ unsafe fn hamming_search_simd_x86_avx2(needle: &[u8], needle_len: usize, haystac
     res
 }
 
-pub fn levenshtein_naive(a: &[u8], a_len: usize, b: &[u8], b_len: usize, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+pub fn levenshtein_naive(mut a: &[u8], mut a_len: usize, mut b: &[u8], mut b_len: usize, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+    let a_old = a;
+    let a_old_len = a_len;
+    let b_old = b;
+    let b_old_len = b_len;
+    let swap = a_old_len > b_old_len; // swap so that a_len <= b_len
+    a = if swap {b_old} else {a_old};
+    a_len = if swap {b_old_len} else {a_old_len};
+    b = if swap {a_old} else {b_old};
+    b_len = if swap {a_old_len} else {b_old_len};
 
+    let len = a_len + 1;
+    let mut dp1 = vec![0u32; len]; // in each iteration, dp1 is already calculated
+    let mut dp2 = vec![0u32; len]; // dp2 the currently calculated column
+    let mut traceback = vec![vec![0u8; len]; b_len + 1];
+
+    for i in 0..len {
+        dp1[i] = i;
+        traceback[0][i] = 2u8;
+    }
+
+    for i in 1..(b_len + 1) {
+        dp2[0] = 0;
+        traceback[i][0] = 1u8;
+
+        for j in 1..len {
+            let sub = dp1[j - 1] + (if needle[j - 1] == haystack[i - 1] {0} else {1});
+            let a_gap = dp1[j] + 1;
+            let b_gap = dp2[j - 1] + 1;
+
+            dp2[j] = a_gap;
+            traceback[i][j] = 1u8;
+
+            if b_gap < dp2[j] {
+                dp2[j] = b_gap;
+                traceback[i][j] = 2u8;
+            }
+
+            if sub <= dp2[j] {
+                dp2[j] = sub;
+                traceback[i][j] = 0u8;
+            }
+        }
+
+        let temp = dp1;
+        dp1 = dp2;
+        dp2 = temp;
+    }
+
+    if traceback {
+        let mut res = vec![];
+        let mut i = len - 1;
+        let mut j = b_len;
+
+        while i >= 0 && j >= 0 {
+            let edit = traceback[i][j];
+
+            match edit {
+                0 => {
+                    res.push(if a[i - 1] == b[j - 1] {Edit::Match} else {Edit::Mismatch});
+                    i -= 1;
+                    j -= 1;
+                },
+                1 => {
+                    res.push(if swap {Edit::BGap} else {Edit::AGap});
+                    j -= 1;
+                },
+                2 => {
+                    res.push(if swap {Edit::AGap} else {Edit::BGap});
+                    i -= 1;
+                },
+                _ => {
+                    panic!("This should not be reached!");
+                }
+            }
+        }
+
+        res.reverse();
+        (dp1[len - 1], Some(res))
+    }else{
+        (dp1[len - 1], None)
+    }
 }
 
 pub fn levenshtein_naive(a: &[u8], a_len: usize, b: &[u8], b_len: usize, k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
