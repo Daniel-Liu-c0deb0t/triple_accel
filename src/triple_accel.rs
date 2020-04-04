@@ -211,9 +211,9 @@ unsafe fn hamming_search_simd_x86_avx2(needle: &[u8], needle_len: usize, haystac
     // do blocks of 32 bytes at once
     for i in 0..len {
         let a = _mm256_loadu_si256(needle_ptr);
-        let b = _mm256_loadu_si256(haystack_ptr.offset(i) as *const __m256i);
+        let b = _mm256_loadu_si256(haystack_ptr.offset(i as isize) as *const __m256i);
         let r = _mm256_movemask_epi8(_mm256_cmpeq_epi8(a, b));
-        let final_res = ((~r) & mask).count_ones(); // mask out characters not in needle
+        let final_res = ((!r) & mask).count_ones(); // mask out characters not in needle
 
         if final_res <= k {
             res.push(Match{start: i, end: i + needle_len, k: final_res});
@@ -221,8 +221,8 @@ unsafe fn hamming_search_simd_x86_avx2(needle: &[u8], needle_len: usize, haystac
     }
 
     // do leftover characters
-    'outer for i in len..real_len {
-        let final_res = 0u32;
+    'outer: for i in len..real_len {
+        let mut final_res = 0u32;
 
         for j in 0..needle_len {
             if needle[j] != haystack[i + j] {
@@ -240,33 +240,29 @@ unsafe fn hamming_search_simd_x86_avx2(needle: &[u8], needle_len: usize, haystac
     res
 }
 
-pub fn levenshtein_naive(mut a: &[u8], mut a_len: usize, mut b: &[u8], mut b_len: usize, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
-    let a_old = a;
-    let a_old_len = a_len;
-    let b_old = b;
-    let b_old_len = b_len;
-    let swap = a_old_len > b_old_len; // swap so that a_len <= b_len
-    a = if swap {b_old} else {a_old};
-    a_len = if swap {b_old_len} else {a_old_len};
-    b = if swap {a_old} else {b_old};
-    b_len = if swap {a_old_len} else {b_old_len};
+pub fn levenshtein_naive(a: &[u8], a_len: usize, b: &[u8], b_len: usize, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+    let swap = a_len > b_len; // swap so that a_len <= b_len
+    let a_new = if swap {b} else {a};
+    let a_new_len = if swap {b_len} else {a_len};
+    let b_new = if swap {a} else {b};
+    let b_new_len = if swap {a_len} else {b_len};
 
-    let len = a_len + 1;
+    let len = a_new_len + 1;
     let mut dp1 = vec![0u32; len]; // in each iteration, dp1 is already calculated
     let mut dp2 = vec![0u32; len]; // dp2 the currently calculated column
-    let mut traceback = vec![vec![0u8; len]; b_len + 1];
+    let mut traceback = vec![vec![0u8; len]; b_new_len + 1];
 
     for i in 0..len {
-        dp1[i] = i;
+        dp1[i] = i as u32;
         traceback[0][i] = 2u8;
     }
 
-    for i in 1..(b_len + 1) {
+    for i in 1..(b_new_len + 1) {
         dp2[0] = 0;
         traceback[i][0] = 1u8;
 
         for j in 1..len {
-            let sub = dp1[j - 1] + (if needle[j - 1] == haystack[i - 1] {0} else {1});
+            let sub = dp1[j - 1] + (if a_new[j - 1] == b_new[i - 1] {0} else {1});
             let a_gap = dp1[j] + 1;
             let b_gap = dp2[j - 1] + 1;
 
@@ -289,17 +285,17 @@ pub fn levenshtein_naive(mut a: &[u8], mut a_len: usize, mut b: &[u8], mut b_len
         dp2 = temp;
     }
 
-    if traceback {
+    if trace_on {
         let mut res = vec![];
-        let mut i = len - 1;
-        let mut j = b_len;
+        let mut i = a_new_len;
+        let mut j = b_new_len;
 
-        while i >= 0 && j >= 0 {
+        while i > 0 || j > 0 {
             let edit = traceback[i][j];
 
             match edit {
                 0 => {
-                    res.push(if a[i - 1] == b[j - 1] {Edit::Match} else {Edit::Mismatch});
+                    res.push(if a_new[i - 1] == b_new[j - 1] {Edit::Match} else {Edit::Mismatch});
                     i -= 1;
                     j -= 1;
                 },
@@ -318,24 +314,20 @@ pub fn levenshtein_naive(mut a: &[u8], mut a_len: usize, mut b: &[u8], mut b_len
         }
 
         res.reverse();
-        (dp1[len - 1], Some(res))
+        (dp1[a_new_len], Some(res))
     }else{
-        (dp1[len - 1], None)
+        (dp1[a_new_len], None)
     }
 }
 
-pub fn levenshtein_naive(a: &[u8], a_len: usize, b: &[u8], b_len: usize, k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
-    let a_old = a;
-    let a_old_len = a_len;
-    let b_old = b;
-    let b_old_len = b_len;
-    let swap = a_old_len > b_old_len; // swap so that a_len <= b_len
-    a = if swap {b_old} else {a_old};
-    a_len = if swap {b_old_len} else {a_old_len};
-    b = if swap {a_old} else {b_old};
-    b_len = if swap {a_old_len} else {b_old_len};
+pub fn levenshtein_naive_k(a: &[u8], a_len: usize, b: &[u8], b_len: usize, k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+    let swap = a_len > b_len; // swap so that a_len <= b_len
+    let a_new = if swap {b} else {a};
+    let a_new_len = if swap {b_len} else {a_len};
+    let b_new = if swap {a} else {b};
+    let b_new_len = if swap {a_len} else {b_len};
 
-    let len = a_len + 1;
+    let len = a_new_len + 1;
     let mut lo = 0usize;
     let mut hi = (k + 1) as usize;
     let k_len = ((k << 1) + 1) as usize;
@@ -345,14 +337,14 @@ pub fn levenshtein_naive(a: &[u8], a_len: usize, b: &[u8], b_len: usize, k: u32,
     let mut offset = vec![0usize; len];
 
     for i in 0..(hi - lo) {
-        dp1[i] = i;
+        dp1[i] = i as u32;
         traceback[0][i] = 1u8;
     }
 
     for i in 1..len {
         hi = std::cmp::min(hi + 1, len);
 
-        if i > k {
+        if i > k as usize {
             lo += 1;
         }
 
@@ -362,13 +354,13 @@ pub fn levenshtein_naive(a: &[u8], a_len: usize, b: &[u8], b_len: usize, k: u32,
             let idx = lo + j;
             let sub = {
                 if j == 0 {
-                    u32.max_value()
+                    u32::max_value()
                 }else{
-                    dp1[idx - 1 - offset[i - 1]] + (if needle[i - 1] == haystack[idx - 1] {0} else {1})
+                    dp1[idx - 1 - offset[i - 1]] + (if a_new[i - 1] == b_new[idx - 1] {0} else {1})
                 }
             };
-            let a_gap = if j == 0 {u32.max_value()} else {dp2[j - 1] + 1};
-            let b_gap = if j == hi - lo - 1 {u32.max_value()} else {dp1[idx - offset[i - 1]] + 1};
+            let a_gap = if j == 0 {u32::max_value()} else {dp2[j - 1] + 1};
+            let b_gap = if j == hi - lo - 1 {u32::max_value()} else {dp1[idx - offset[i - 1]] + 1};
 
             dp2[j] = sub;
             traceback[i][j] = 0u8;
@@ -389,17 +381,17 @@ pub fn levenshtein_naive(a: &[u8], a_len: usize, b: &[u8], b_len: usize, k: u32,
         dp2 = temp;
     }
 
-    if traceback {
+    if trace_on {
         let mut res = vec![];
-        let mut i = a_len;
-        let mut j = b_len;
+        let mut i = a_new_len;
+        let mut j = b_new_len;
 
-        while i >= 0 && j >= 0 {
+        while i > 0 || j > 0 {
             let edit = traceback[i][j - offset[i]];
 
             match edit {
                 0 => {
-                    res.push(if a[i - 1] == b[j - 1] {Edit::Match} else {Edit::Mismatch});
+                    res.push(if a_new[i - 1] == b_new[j - 1] {Edit::Match} else {Edit::Mismatch});
                     i -= 1;
                     j -= 1;
                 },
@@ -735,12 +727,12 @@ pub fn levenshtein_search_naive(needle: &[u8], needle_len: usize, haystack: &[u8
     let len = needle_len + 1;
     let mut dp1 = vec![0u32; len];
     let mut dp2 = vec![0u32; len];
-    let mut length1 = vec![0u32; len];
-    let mut length2 = vec![0u32; len];
+    let mut length1 = vec![0usize; len];
+    let mut length2 = vec![0usize; len];
     let mut res = vec![];
 
     for i in 0..len {
-        dp1[i] = i;
+        dp1[i] = i as u32;
     }
 
     if dp1[len - 1] <= k {
@@ -776,9 +768,13 @@ pub fn levenshtein_search_naive(needle: &[u8], needle_len: usize, haystack: &[u8
             res.push(Match{start: i + 1 - length2[len - 1], end: i + 1, k: final_res});
         }
 
-        let temp = dp1;
+        let temp_dp = dp1;
         dp1 = dp2;
-        dp2 = temp;
+        dp2 = temp_dp;
+
+        let temp_length = length1;
+        length1 = length2;
+        length2 = temp_length;
     }
 
     res

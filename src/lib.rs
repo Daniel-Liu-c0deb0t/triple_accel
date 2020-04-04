@@ -20,6 +20,21 @@ mod tests {
     }
 
     #[test]
+    fn test_basic_hamming_search_naive() {
+        let a_str = b"abc";
+        let b_str = b"  abc  abb";
+
+        let mut a = alloc_str(a_str.len());
+        fill_str(&mut a, a_str);
+
+        let mut b = alloc_str(b_str.len());
+        fill_str(&mut b, b_str);
+
+        let res = hamming_search_naive(&a, a_str.len(), &b, b_str.len(), 1);
+        assert!(res == vec![Match{start: 2, end: 5, k: 0}, Match{start: 7, end: 10, k: 1}]);
+    }
+
+    #[test]
     fn test_basic_hamming_words() {
         let a_str = b"abc";
         let b_str = b"abd";
