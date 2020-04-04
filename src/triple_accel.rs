@@ -325,7 +325,103 @@ pub fn levenshtein_naive(mut a: &[u8], mut a_len: usize, mut b: &[u8], mut b_len
 }
 
 pub fn levenshtein_naive(a: &[u8], a_len: usize, b: &[u8], b_len: usize, k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+    let a_old = a;
+    let a_old_len = a_len;
+    let b_old = b;
+    let b_old_len = b_len;
+    let swap = a_old_len > b_old_len; // swap so that a_len <= b_len
+    a = if swap {b_old} else {a_old};
+    a_len = if swap {b_old_len} else {a_old_len};
+    b = if swap {a_old} else {b_old};
+    b_len = if swap {a_old_len} else {b_old_len};
 
+    let len = a_len + 1;
+    let mut lo = 0usize;
+    let mut hi = (k + 1) as usize;
+    let k_len = ((k << 1) + 1) as usize;
+    let mut dp1 = vec![0u32; k_len]; // in each iteration, dp1 is already calculated
+    let mut dp2 = vec![0u32; k_len]; // dp2 the currently calculated row
+    let mut traceback = vec![vec![0u8; k_len]; len];
+    let mut offset = vec![0usize; len];
+
+    for i in 0..(hi - lo) {
+        dp1[i] = i;
+        traceback[0][i] = 1u8;
+    }
+
+    for i in 1..len {
+        hi = std::cmp::min(hi + 1, len);
+
+        if i > k {
+            lo += 1;
+        }
+
+        offset[i] = lo;
+
+        for j in 0..(hi - lo) {
+            let idx = lo + j;
+            let sub = {
+                if j == 0 {
+                    u32.max_value()
+                }else{
+                    dp1[idx - 1 - offset[i - 1]] + (if needle[i - 1] == haystack[idx - 1] {0} else {1})
+                }
+            };
+            let a_gap = if j == 0 {u32.max_value()} else {dp2[j - 1] + 1};
+            let b_gap = if j == hi - lo - 1 {u32.max_value()} else {dp1[idx - offset[i - 1]] + 1};
+
+            dp2[j] = sub;
+            traceback[i][j] = 0u8;
+
+            if a_gap < dp2[j] {
+                dp2[j] = a_gap;
+                traceback[i][j] = 1u8;
+            }
+
+            if b_gap < dp2[j] {
+                dp2[j] = b_gap;
+                traceback[i][j] = 2u8;
+            }
+        }
+
+        let temp = dp1;
+        dp1 = dp2;
+        dp2 = temp;
+    }
+
+    if traceback {
+        let mut res = vec![];
+        let mut i = a_len;
+        let mut j = b_len;
+
+        while i >= 0 && j >= 0 {
+            let edit = traceback[i][j - offset[i]];
+
+            match edit {
+                0 => {
+                    res.push(if a[i - 1] == b[j - 1] {Edit::Match} else {Edit::Mismatch});
+                    i -= 1;
+                    j -= 1;
+                },
+                1 => {
+                    res.push(if swap {Edit::BGap} else {Edit::AGap});
+                    j -= 1;
+                },
+                2 => {
+                    res.push(if swap {Edit::AGap} else {Edit::BGap});
+                    i -= 1;
+                },
+                _ => {
+                    panic!("This should not be reached!");
+                }
+            }
+        }
+
+        res.reverse();
+        (dp1[hi - lo - 1], Some(res))
+    }else{
+        (dp1[hi - lo - 1], None)
+    }
 }
 
 pub fn levenshtein_simd(a: &[u8], a_len: usize, b: &[u8], b_len: usize, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
