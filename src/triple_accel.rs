@@ -250,16 +250,22 @@ pub fn levenshtein_naive(a: &[u8], a_len: usize, b: &[u8], b_len: usize, trace_o
     let len = a_new_len + 1;
     let mut dp1 = vec![0u32; len]; // in each iteration, dp1 is already calculated
     let mut dp2 = vec![0u32; len]; // dp2 the currently calculated column
-    let mut traceback = vec![vec![0u8; len]; b_new_len + 1];
+    let mut traceback = if trace_on {vec![vec![0u8; len]; b_new_len + 1]} else {vec![]};
 
     for i in 0..len {
         dp1[i] = i as u32;
-        traceback[0][i] = 2u8;
+
+        if trace_on {
+            traceback[0][i] = 2u8;
+        }
     }
 
     for i in 1..(b_new_len + 1) {
-        dp2[0] = 0;
-        traceback[i][0] = 1u8;
+        dp2[0] = i as u32;
+
+        if trace_on {
+            traceback[i][0] = 1u8;
+        }
 
         for j in 1..len {
             let sub = dp1[j - 1] + (if a_new[j - 1] == b_new[i - 1] {0} else {1});
@@ -267,16 +273,25 @@ pub fn levenshtein_naive(a: &[u8], a_len: usize, b: &[u8], b_len: usize, trace_o
             let b_gap = dp2[j - 1] + 1;
 
             dp2[j] = a_gap;
-            traceback[i][j] = 1u8;
+
+            if trace_on {
+                traceback[i][j] = 1u8;
+            }
 
             if b_gap < dp2[j] {
                 dp2[j] = b_gap;
-                traceback[i][j] = 2u8;
+
+                if trace_on {
+                    traceback[i][j] = 2u8;
+                }
             }
 
             if sub <= dp2[j] {
                 dp2[j] = sub;
-                traceback[i][j] = 0u8;
+
+                if trace_on {
+                    traceback[i][j] = 0u8;
+                }
             }
         }
 
@@ -287,25 +302,25 @@ pub fn levenshtein_naive(a: &[u8], a_len: usize, b: &[u8], b_len: usize, trace_o
 
     if trace_on {
         let mut res = vec![];
-        let mut i = a_new_len;
-        let mut j = b_new_len;
+        let mut i = b_new_len;
+        let mut j = a_new_len;
 
         while i > 0 || j > 0 {
             let edit = traceback[i][j];
 
             match edit {
                 0 => {
-                    res.push(if a_new[i - 1] == b_new[j - 1] {Edit::Match} else {Edit::Mismatch});
+                    res.push(if a_new[j - 1] == b_new[i - 1] {Edit::Match} else {Edit::Mismatch});
                     i -= 1;
                     j -= 1;
                 },
                 1 => {
                     res.push(if swap {Edit::BGap} else {Edit::AGap});
-                    j -= 1;
+                    i -= 1;
                 },
                 2 => {
                     res.push(if swap {Edit::AGap} else {Edit::BGap});
-                    i -= 1;
+                    j -= 1;
                 },
                 _ => {
                     panic!("This should not be reached!");
@@ -326,53 +341,71 @@ pub fn levenshtein_naive_k(a: &[u8], a_len: usize, b: &[u8], b_len: usize, k: u3
     let a_new_len = if swap {b_len} else {a_len};
     let b_new = if swap {a} else {b};
     let b_new_len = if swap {a_len} else {b_len};
+    let k_usize = k as usize;
+
+    if b_new_len - a_new_len > k_usize {
+        return ((b_new_len - a_new_len) as u32, None);
+    }
 
     let len = a_new_len + 1;
     let mut lo = 0usize;
-    let mut hi = (k + 1) as usize;
-    let k_len = ((k << 1) + 1) as usize;
+    let mut hi = std::cmp::min(k_usize + 1, b_new_len + 1);
+    let mut prev_lo;
+    let mut prev_hi;
+    let k_len = std::cmp::min((k_usize << 1) + 1, b_new_len + 1);
     let mut dp1 = vec![0u32; k_len]; // in each iteration, dp1 is already calculated
     let mut dp2 = vec![0u32; k_len]; // dp2 the currently calculated row
-    let mut traceback = vec![vec![0u8; k_len]; len];
-    let mut offset = vec![0usize; len];
+    let mut traceback = if trace_on {vec![vec![0u8; k_len]; len]} else {vec![]};
 
     for i in 0..(hi - lo) {
         dp1[i] = i as u32;
-        traceback[0][i] = 1u8;
+
+        if trace_on {
+            traceback[0][i] = 1u8;
+        }
     }
 
     for i in 1..len {
-        hi = std::cmp::min(hi + 1, len);
+        prev_lo = lo;
+        prev_hi = hi;
+        hi = std::cmp::min(hi + 1, b_new_len + 1);
 
-        if i > k as usize {
+        if i > k_usize {
             lo += 1;
         }
-
-        offset[i] = lo;
 
         for j in 0..(hi - lo) {
             let idx = lo + j;
             let sub = {
-                if j == 0 {
+                if idx == 0 {
                     u32::max_value()
                 }else{
-                    dp1[idx - 1 - offset[i - 1]] + (if a_new[i - 1] == b_new[idx - 1] {0} else {1})
+                    dp1[idx - 1 - prev_lo] + (if a_new[i - 1] == b_new[idx - 1] {0} else {1})
                 }
             };
             let a_gap = if j == 0 {u32::max_value()} else {dp2[j - 1] + 1};
-            let b_gap = if j == hi - lo - 1 {u32::max_value()} else {dp1[idx - offset[i - 1]] + 1};
+            let b_gap = if idx >= prev_hi {u32::max_value()} else {dp1[idx - prev_lo] + 1};
 
             dp2[j] = sub;
-            traceback[i][j] = 0u8;
+
+            if trace_on {
+                traceback[i][j] = 0u8;
+            }
 
             if a_gap < dp2[j] {
                 dp2[j] = a_gap;
-                traceback[i][j] = 1u8;
+
+                if trace_on {
+                    traceback[i][j] = 1u8;
+                }
             }
 
             if b_gap < dp2[j] {
                 dp2[j] = b_gap;
-                traceback[i][j] = 2u8;
+
+                if trace_on {
+                    traceback[i][j] = 2u8;
+                }
             }
         }
 
@@ -381,39 +414,39 @@ pub fn levenshtein_naive_k(a: &[u8], a_len: usize, b: &[u8], b_len: usize, k: u3
         dp2 = temp;
     }
 
-    if trace_on {
-        let mut res = vec![];
-        let mut i = a_new_len;
-        let mut j = b_new_len;
+    if !trace_on || dp1[hi - lo - 1] > k {
+        return (dp1[hi - lo - 1], None);
+    }
 
-        while i > 0 || j > 0 {
-            let edit = traceback[i][j - offset[i]];
+    let mut res = vec![];
+    let mut i = a_new_len;
+    let mut j = b_new_len;
 
-            match edit {
-                0 => {
-                    res.push(if a_new[i - 1] == b_new[j - 1] {Edit::Match} else {Edit::Mismatch});
-                    i -= 1;
-                    j -= 1;
-                },
-                1 => {
-                    res.push(if swap {Edit::BGap} else {Edit::AGap});
-                    j -= 1;
-                },
-                2 => {
-                    res.push(if swap {Edit::AGap} else {Edit::BGap});
-                    i -= 1;
-                },
-                _ => {
-                    panic!("This should not be reached!");
-                }
+    while i > 0 || j > 0 {
+        let edit = traceback[i][j - (if i > k_usize {i - k_usize} else {0})];
+
+        match edit {
+            0 => {
+                res.push(if a_new[i - 1] == b_new[j - 1] {Edit::Match} else {Edit::Mismatch});
+                i -= 1;
+                j -= 1;
+            },
+            1 => {
+                res.push(if swap {Edit::BGap} else {Edit::AGap});
+                j -= 1;
+            },
+            2 => {
+                res.push(if swap {Edit::AGap} else {Edit::BGap});
+                i -= 1;
+            },
+            _ => {
+                panic!("This should not be reached!");
             }
         }
-
-        res.reverse();
-        (dp1[hi - lo - 1], Some(res))
-    }else{
-        (dp1[hi - lo - 1], None)
     }
+
+    res.reverse();
+    (dp1[hi - lo - 1], Some(res))
 }
 
 pub fn levenshtein_simd(a: &[u8], a_len: usize, b: &[u8], b_len: usize, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
@@ -450,6 +483,10 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
     let k1_div2 = k1 >> 1;
     let k2 = 30usize;
     let k2_div2 = k2 >> 1;
+
+    if b_len - a_len > k2 {
+        return ((b_len - a_len) as u32, None);
+    }
 
     // initialized with max value of i8
     // must use saturated additions afterwards to not overflow
@@ -667,11 +704,11 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], a_old_len: usize, b_old: &[u8]
         _mm256_storeu_si256(final_arr.as_mut_ptr() as *mut __m256i, dp1);
     }
 
-    if trace_on {
-        (final_arr[final_idx] as u32, Some(traceback(&traceback_arr, final_idx, a, a_len, b, b_len, swap, ends_with_k2)))
-    }else{
-        (final_arr[final_idx] as u32, None)
+    if !trace_on || final_arr[final_idx] as usize > k2 {
+        return (final_arr[final_idx] as u32, None);
     }
+
+    (final_arr[final_idx] as u32, Some(traceback(&traceback_arr, final_idx, a, a_len, b, b_len, swap, ends_with_k2)))
 }
 
 fn traceback(arr: &[[u8; 32]], mut idx: usize, a: &[u8], a_len: usize, b: &[u8], b_len: usize, swap: bool, mut is_k2: bool) -> Vec<Edit> {
@@ -724,6 +761,10 @@ fn traceback(arr: &[[u8; 32]], mut idx: usize, a: &[u8], a_len: usize, b: &[u8],
 }
 
 pub fn levenshtein_search_naive(needle: &[u8], needle_len: usize, haystack: &[u8], haystack_len: usize, k: u32) -> Vec<Match> {
+    if needle_len == 0 {
+        return vec![];
+    }
+
     let len = needle_len + 1;
     let mut dp1 = vec![0u32; len];
     let mut dp2 = vec![0u32; len];
