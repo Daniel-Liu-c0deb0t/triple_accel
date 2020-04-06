@@ -43,7 +43,22 @@ fn bench_rand_levenshtein(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(bench_rand, bench_rand_hamming, bench_rand_hamming_search, bench_rand_levenshtein);
+fn bench_rand_levenshtein_search(c: &mut Criterion) {
+    let mut rng = thread_rng();
+    let needle_len = 32;
+    let haystack_len = 1000;
+    let k = 16;
+    let (needle, haystack) = rand_levenshtein_needle_haystack(needle_len, haystack_len, 50, k, &mut rng);
+
+    let mut group = c.benchmark_group("bench_rand_levenshtein_search");
+
+    group.bench_function("levenshtein_search_naive", |b| b.iter(|| levenshtein_search_naive(&needle, needle_len, &haystack, haystack_len, k)));
+    group.bench_function("levenshtein_search_simd", |b| b.iter(|| levenshtein_search_simd(&needle, needle_len, &haystack, haystack_len, k)));
+
+    group.finish();
+}
+
+criterion_group!(bench_rand, bench_rand_hamming, bench_rand_hamming_search, bench_rand_levenshtein, bench_rand_levenshtein_search);
 criterion_main!(bench_rand);
 
 fn rand_hamming_needle_haystack<R: Rng>(needle_len: usize, haystack_len: usize, num_match: usize, k: u32, rng: &mut R) -> (Vec<u8>, Vec<u8>) {
@@ -68,7 +83,10 @@ fn rand_hamming_needle_haystack<R: Rng>(needle_len: usize, haystack_len: usize, 
         }
     }
 
-    (needle, haystack)
+    let mut haystack_final = alloc_str(haystack.len());
+    fill_str(&mut haystack_final, &haystack);
+
+    (needle, haystack_final)
 }
 
 fn rand_hamming_pair<R: Rng>(length: usize, k: u32, rng: &mut R) -> (Vec<u8>, Vec<u8>) {
@@ -92,8 +110,39 @@ fn rand_hamming_mutate<R: Rng>(a: &[u8], length: usize, k: u32, rng: &mut R) -> 
     b
 }
 
+fn rand_levenshtein_needle_haystack<R: Rng>(needle_len: usize, haystack_len: usize, num_match: usize, k: u32, rng: &mut R) -> (Vec<u8>, Vec<u8>) {
+    let mut idx: Vec<usize> = (0usize..haystack_len).collect();
+    idx.shuffle(rng);
+    let mut insert = vec![false; haystack_len];
+
+    for i in 0..num_match {
+        insert[idx[i]] = true;
+    }
+
+    let bytes: Vec<u8> = (33u8..127u8).collect();
+    let needle = rand_str(needle_len, rng);
+    let mut haystack: Vec<u8> = vec![];
+
+    for i in 0..haystack_len {
+        if insert[i] {
+            let s = rand_levenshtein_mutate(&needle, needle_len, k, rng);
+            haystack.extend(&s);
+        }else{
+            haystack.push(*bytes.choose(rng).unwrap());
+        }
+    }
+
+    (needle, haystack)
+}
+
 fn rand_levenshtein_pair<R: Rng>(length: usize, k: u32, rng: &mut R) -> (Vec<u8>, Vec<u8>) {
     let a = rand_str(length, rng);
+    let b = rand_levenshtein_mutate(&a, length, k, rng);
+
+    (a, b)
+}
+
+fn rand_levenshtein_mutate<R: Rng>(a: &[u8], length: usize, k: u32, rng: &mut R) -> Vec<u8> {
     let mut edits = vec![0u8; length];
     let curr_k: usize = rng.gen_range(0usize, k as usize + 1);
     let mut idx: Vec<usize> = (0usize..length).collect();
@@ -123,7 +172,7 @@ fn rand_levenshtein_pair<R: Rng>(length: usize, k: u32, rng: &mut R) -> (Vec<u8>
         }
     }
 
-    (a, b)
+    b
 }
 
 fn rand_str<R: Rng>(length: usize, rng: &mut R) -> Vec<u8> {
