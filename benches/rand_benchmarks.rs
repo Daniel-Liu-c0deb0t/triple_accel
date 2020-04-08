@@ -36,7 +36,7 @@ fn bench_rand_levenshtein(c: &mut Criterion) {
 
     group.bench_function("levenshtein_naive", |b| b.iter(|| levenshtein_naive(&a_str, &b_str, false)));
     group.bench_function("levenshtein_naive_k", |b| b.iter(|| levenshtein_naive_k(&a_str, &b_str, 30, false)));
-    group.bench_function("levenshtein_simd", |b| b.iter(|| levenshtein_simd(&a_str, &b_str, false)));
+    group.bench_function("levenshtein_simd_k", |b| b.iter(|| levenshtein_simd_k(&a_str, &b_str, 30, false)));
 
     group.finish();
 }

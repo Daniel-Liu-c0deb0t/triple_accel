@@ -42,8 +42,8 @@ pub fn hamming_search_naive(needle: &[u8], haystack: &[u8], k: u32) -> Vec<Match
 
     assert!(needle_len <= haystack_len);
 
-    let mut res = vec![];
     let len = haystack_len + 1 - needle_len;
+    let mut res = Vec::with_capacity(len >> 2);
 
     'outer: for i in 0..len {
         let mut final_res = 0u32;
@@ -94,11 +94,11 @@ pub fn hamming_words(a: &[u8], b: &[u8]) -> u32 {
 
     unsafe {
         let mut res = 0u32;
-        // the address better be aligned for u128
+        // the pointer address better be aligned for u128
         // may not be in little endian
         let a_ptr = a.as_ptr() as *const u128;
         let b_ptr = b.as_ptr() as *const u128;
-        let words_len = ((a.len() >> 4) + (if (a.len() & 15) > 0 {1} else {0})) as isize;
+        let words_len = (a.len() >> 4) as isize;
 
         for i in 0..words_len {
             // change to little endian omitted because it is not necessary in this case
@@ -114,6 +114,20 @@ pub fn hamming_words(a: &[u8], b: &[u8]) -> u32 {
             // ...01010101
             r &= 0x55555555555555555555555555555555u128;
             res += r.count_ones();
+        }
+
+        let words_rem = a.len() & 15;
+
+        if words_rem > 0 {
+            let mut r = (*a_ptr.offset(words_len)) ^ (*b_ptr.offset(words_len));
+            r |= r >> 4;
+            r &= 0x0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0fu128;
+            r |= r >> 2;
+            r &= 0x33333333333333333333333333333333u128;
+            r |= r >> 1;
+            r &= 0x55555555555555555555555555555555u128;
+            // make sure to mask out bits outside the string lengths
+            res += (r & ((1u128 << ((words_rem as u128) << 3u128)) - 1u128)).count_ones();
         }
 
         res
@@ -189,8 +203,8 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8], k: u32) -> Vec<Match>
 unsafe fn hamming_search_simd_x86_avx2(needle: &[u8], haystack: &[u8], k: u32) -> Vec<Match> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
-    let mut res = vec![];
     let real_len = haystack_len + 1 - needle_len;
+    let mut res = Vec::with_capacity(real_len >> 2);
     // length if needle is a block of 32 bytes
     let len = if haystack_len < 31 {0} else {haystack_len - 31};
     let haystack_ptr = haystack.as_ptr();
@@ -246,13 +260,13 @@ pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec
     let len = a_new_len + 1;
     let mut dp1 = vec![0u32; len]; // in each iteration, dp1 is already calculated
     let mut dp2 = vec![0u32; len]; // dp2 the currently calculated column
-    let mut traceback = if trace_on {vec![vec![0u8; len]; b_new_len + 1]} else {vec![]};
+    let mut traceback = if trace_on {vec![0u8; (b_new_len + 1) * len]} else {vec![]};
 
     for i in 0..len {
         dp1[i] = i as u32;
 
         if trace_on {
-            traceback[0][i] = 2u8;
+            traceback[0 * len + i] = 2u8;
         }
     }
 
@@ -260,25 +274,26 @@ pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec
         dp2[0] = i as u32;
 
         if trace_on {
-            traceback[i][0] = 1u8;
+            traceback[i * len + 0] = 1u8;
         }
 
         for j in 1..len {
             let sub = dp1[j - 1] + (if a_new[j - 1] == b_new[i - 1] {0} else {1});
             let a_gap = dp1[j] + 1;
             let b_gap = dp2[j - 1] + 1;
+            let traceback_idx = i * len + j;
 
             dp2[j] = a_gap;
 
             if trace_on {
-                traceback[i][j] = 1u8;
+                traceback[traceback_idx] = 1u8;
             }
 
             if b_gap < dp2[j] {
                 dp2[j] = b_gap;
 
                 if trace_on {
-                    traceback[i][j] = 2u8;
+                    traceback[traceback_idx] = 2u8;
                 }
             }
 
@@ -286,7 +301,7 @@ pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec
                 dp2[j] = sub;
 
                 if trace_on {
-                    traceback[i][j] = 0u8;
+                    traceback[traceback_idx] = 0u8;
                 }
             }
         }
@@ -297,12 +312,12 @@ pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec
     }
 
     if trace_on {
-        let mut res = vec![];
+        let mut res = Vec::with_capacity(a_new_len + b_new_len);
         let mut i = b_new_len;
         let mut j = a_new_len;
 
         while i > 0 || j > 0 {
-            let edit = traceback[i][j];
+            let edit = traceback[i * len + j];
 
             match edit {
                 0 => {
@@ -351,13 +366,13 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, 
     let k_len = std::cmp::min((k_usize << 1) + 1, b_new_len + 1);
     let mut dp1 = vec![0u32; k_len]; // in each iteration, dp1 is already calculated
     let mut dp2 = vec![0u32; k_len]; // dp2 the currently calculated row
-    let mut traceback = if trace_on {vec![vec![0u8; k_len]; len]} else {vec![]};
+    let mut traceback = if trace_on {vec![0u8; len * k_len]} else {vec![]};
 
     for i in 0..(hi - lo) {
         dp1[i] = i as u32;
 
         if trace_on {
-            traceback[0][i] = 1u8;
+            traceback[0 * k_len + i] = 1u8;
         }
     }
 
@@ -384,15 +399,17 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, 
 
             dp2[j] = sub;
 
+            let traceback_idx = i * k_len + j;
+
             if trace_on {
-                traceback[i][j] = 0u8;
+                traceback[traceback_idx] = 0u8;
             }
 
             if a_gap < dp2[j] {
                 dp2[j] = a_gap;
 
                 if trace_on {
-                    traceback[i][j] = 1u8;
+                    traceback[traceback_idx] = 1u8;
                 }
             }
 
@@ -400,7 +417,7 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, 
                 dp2[j] = b_gap;
 
                 if trace_on {
-                    traceback[i][j] = 2u8;
+                    traceback[traceback_idx] = 2u8;
                 }
             }
         }
@@ -414,12 +431,12 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, 
         return (dp1[hi - lo - 1], None);
     }
 
-    let mut res = vec![];
+    let mut res = Vec::with_capacity(a_new_len + b_new_len);
     let mut i = a_new_len;
     let mut j = b_new_len;
 
     while i > 0 || j > 0 {
-        let edit = traceback[i][j - (if i > k_usize {i - k_usize} else {0})];
+        let edit = traceback[i * k_len + (j - (if i > k_usize {i - k_usize} else {0}))];
 
         match edit {
             0 => {
@@ -445,7 +462,9 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, 
     (dp1[hi - lo - 1], Some(res))
 }
 
-pub fn levenshtein_simd(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+    assert!(k <= 30);
+
     if a.len() == 0 && b.len() == 0 {
         return if trace_on {(0u32, Some(vec![]))} else {(0u32, None)};
     }
@@ -453,7 +472,7 @@ pub fn levenshtein_simd(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec<
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {levenshtein_simd_x86_avx2(a, b, trace_on)};
+            return unsafe {levenshtein_simd_x86_avx2(a, b, k, trace_on)};
         }
     }
 
@@ -464,7 +483,7 @@ pub fn levenshtein_simd(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec<
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], b_old: &[u8], trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], b_old: &[u8], k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
     // swap a and b so that a is shorter than b, if applicable
     // makes operations later on slightly easier, since length of a <= length of b
     let swap = a_old.len() > b_old.len();
@@ -480,7 +499,7 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], b_old: &[u8], trace_on: bool) 
     let k2 = 30usize;
     let k2_div2 = k2 >> 1;
 
-    if b_len - a_len > k2 {
+    if b_len - a_len > k as usize {
         return ((b_len - a_len) as u32, None);
     }
 
@@ -563,11 +582,11 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], b_old: &[u8], trace_on: bool) 
     };
 
     // 0 = match/mismatch, 1 = a gap, 2 = b gap
-    let mut traceback_arr = if trace_on {vec![[0u8; 32]; len + (len & 1)]} else {vec![]};
+    let mut traceback_arr = if trace_on {vec![0u8; (len + (len & 1)) * 32]} else {vec![]};
 
     if trace_on {
-        traceback_arr[1][k2_div2 - 1] = 2u8;
-        traceback_arr[1][k2_div2] = 1u8;
+        *traceback_arr.get_unchecked_mut(1 * 32 + (k2_div2 - 1)) = 2u8;
+        *traceback_arr.get_unchecked_mut(1 * 32 + k2_div2) = 1u8;
     }
 
     // example: allow k = 2 edits for two strings of length 3
@@ -660,9 +679,9 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], b_old: &[u8], trace_on: bool) 
 
         // min of the cost of all three edit operations
         if trace_on {
-            let min = triple_argmin_x86_avx2(sub_k1, a_gap_k1, dp2, ones, twos);
+            let min = triple_argmin_x86_avx2(sub_k1, a_gap_k1, dp2, twos);
             dp2 = _mm256_adds_epi8(min.0, ones);
-            _mm256_storeu_si256(traceback_arr[i << 1].as_mut_ptr() as *mut __m256i, min.1);
+            _mm256_storeu_si256(traceback_arr.as_mut_ptr().offset(((i << 1) * 32) as isize) as *mut __m256i, min.1);
         }else{
             dp2 = _mm256_adds_epi8(_mm256_min_epi8(sub_k1, _mm256_min_epi8(a_gap_k1, dp2)), ones);
         }
@@ -682,9 +701,9 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], b_old: &[u8], trace_on: bool) 
 
         // min of the cost of all three edit operations
         if trace_on {
-            let min = triple_argmin_x86_avx2(sub_k2, dp2, b_gap_k2, ones, twos);
+            let min = triple_argmin_x86_avx2(sub_k2, dp2, b_gap_k2, twos);
             dp2 = _mm256_adds_epi8(min.0, ones);
-            _mm256_storeu_si256(traceback_arr[(i << 1) + 1].as_mut_ptr() as *mut __m256i, min.1);
+            _mm256_storeu_si256(traceback_arr.as_mut_ptr().offset((((i << 1) + 1) * 32) as isize) as *mut __m256i, min.1);
         }else{
             dp2 = _mm256_adds_epi8(_mm256_min_epi8(sub_k2, _mm256_min_epi8(dp2, b_gap_k2)), ones);
         }
@@ -698,24 +717,26 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], b_old: &[u8], trace_on: bool) 
         _mm256_storeu_si256(final_arr.as_mut_ptr() as *mut __m256i, dp1);
     }
 
-    if !trace_on || final_arr[final_idx] as usize > k2 {
-        return (final_arr[final_idx] as u32, None);
+    let final_res = final_arr[final_idx] as u32;
+
+    if !trace_on || final_res > k {
+        return (final_res, None);
     }
 
-    (final_arr[final_idx] as u32, Some(traceback(&traceback_arr, final_idx, a, b, swap, ends_with_k2)))
+    (final_res, Some(traceback(&traceback_arr, final_idx, a, b, swap, ends_with_k2)))
 }
 
-unsafe fn traceback(arr: &[[u8; 32]], mut idx: usize, a: &[u8], b: &[u8], swap: bool, mut is_k2: bool) -> Vec<Edit> {
+unsafe fn traceback(arr: &[u8], mut idx: usize, a: &[u8], b: &[u8], swap: bool, mut is_k2: bool) -> Vec<Edit> {
     // keep track of position in traditional dp array and strings
     let mut i = a.len(); // index in a
     let mut j = b.len(); // index in b
 
     // last diagonal may overshoot, so ignore it
-    let mut arr_idx = arr.len() - 1 - (if is_k2 {0} else {1});
-    let mut res = vec![];
+    let mut arr_idx = (arr.len() >> 5) - 1 - (if is_k2 {0} else {1});
+    let mut res = Vec::with_capacity(a.len() + b.len());
 
     while arr_idx > 0 {
-        let edit = *(*arr.get_unchecked(arr_idx)).get_unchecked(idx);
+        let edit = *arr.get_unchecked(arr_idx * 32 + idx);
 
         match edit {
             0u8 => { // match/mismatch
@@ -767,7 +788,7 @@ pub fn levenshtein_search_naive(needle: &[u8], haystack: &[u8], k: u32) -> Vec<M
     let mut dp2 = vec![0u32; len];
     let mut length1 = vec![0usize; len];
     let mut length2 = vec![0usize; len];
-    let mut res = vec![];
+    let mut res = Vec::with_capacity(haystack_len >> 2);
 
     for i in 0..len {
         dp1[i] = i as u32;
@@ -860,7 +881,7 @@ unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], haystack: &[u8], k: u3
     let mut length_arr = [0u8; 32];
     let length_arr_ptr = length_arr.as_mut_ptr() as *mut __m256i;
 
-    let mut res = vec![];
+    let mut res = Vec::with_capacity(haystack_len >> 2);
 
     let needle_window = {
         let mut needle_window_arr = [0u8; 32];
@@ -958,15 +979,15 @@ unsafe fn print_x86_avx2(a: &str, b: __m256i){
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[inline]
 #[target_feature(enable = "avx2")]
-unsafe fn triple_argmin_x86_avx2(sub: __m256i, a_gap: __m256i, b_gap: __m256i, a_gap_arg: __m256i, b_gap_arg: __m256i) -> (__m256i, __m256i) {
+unsafe fn triple_argmin_x86_avx2(sub: __m256i, a_gap: __m256i, b_gap: __m256i, twos: __m256i) -> (__m256i, __m256i) {
     // return the edit used in addition to doing a min operation
     let mut res_min = _mm256_min_epi8(a_gap, b_gap);
     let a_gap_mask = _mm256_cmpeq_epi8(res_min, a_gap);
-    let mut res_arg = _mm256_blendv_epi8(b_gap_arg, a_gap_arg, a_gap_mask);
+    let mut res_arg = _mm256_adds_epi8(a_gap_mask, twos); // a gap: -1 + 2 = 1, b gap: 0 + 2 = 2
 
     res_min = _mm256_min_epi8(sub, res_min);
     let sub_mask = _mm256_cmpeq_epi8(res_min, sub);
-    res_arg = _mm256_andnot_si256(sub_mask, res_arg); // substitution arguments will automatically be zero
+    res_arg = _mm256_andnot_si256(sub_mask, res_arg); // sub: 0
 
     return (res_min, res_arg);
 }

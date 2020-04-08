@@ -162,55 +162,55 @@ fn test_trace_on_levenshtein_naive_k() {
 }
 
 #[test]
-fn test_basic_levenshtein_simd() {
+fn test_basic_levenshtein_simd_k() {
     let a1 = b"abcde";
     let b1 = b" ab cde";
-    let mut res = levenshtein_simd(a1, b1, false);
+    let mut res = levenshtein_simd_k(a1, b1, 2, false);
     assert!(res.0 == 2);
     assert!(res.1.is_none());
 
     let a2 = b"abcde";
     let b2 = b"";
-    res = levenshtein_simd(a2, b2, false);
+    res = levenshtein_simd_k(a2, b2, 30, false);
     assert!(res.0 == 5);
     assert!(res.1.is_none());
 
     let a3 = b"abcde";
     let b3 = b"abcdee";
-    res = levenshtein_simd(a3, b3, false);
+    res = levenshtein_simd_k(a3, b3, 20, false);
     assert!(res.0 == 1);
     assert!(res.1.is_none());
 
     let a4 = b"abcde";
     let b4 = b"acde";
-    res = levenshtein_simd(a4, b4, false);
+    res = levenshtein_simd_k(a4, b4, 1, false);
     assert!(res.0 == 1);
     assert!(res.1.is_none());
 
     let a5 = b"abcde";
     let b5 = b"abbde";
-    res = levenshtein_simd(a5, b5, false);
+    res = levenshtein_simd_k(a5, b5, 2, false);
     assert!(res.0 == 1);
     assert!(res.1.is_none());
 }
 
 #[test]
-fn test_trace_on_levenshtein_simd() {
+fn test_trace_on_levenshtein_simd_k() {
     let a1 = b"abcde";
     let b1 = b" ab cde";
-    let mut res = levenshtein_simd(a1, b1, true);
+    let mut res = levenshtein_simd_k(a1, b1, 30, true);
     assert!(res.0 == 2);
     assert!(res.1.unwrap() == vec![Edit::AGap, Edit::Match, Edit::Match, Edit::AGap, Edit::Match, Edit::Match, Edit::Match]);
 
     let a2 = b"abcde";
     let b2 = b"";
-    res = levenshtein_simd(a2, b2, true);
+    res = levenshtein_simd_k(a2, b2, 5, true);
     assert!(res.0 == 5);
     assert!(res.1.unwrap() == vec![Edit::BGap, Edit::BGap, Edit::BGap, Edit::BGap, Edit::BGap]);
 
     let a3 = b"abcde";
     let b3 = b"abcce";
-    res = levenshtein_simd(a3, b3, true);
+    res = levenshtein_simd_k(a3, b3, 1, true);
     assert!(res.0 == 1);
     assert!(res.1.unwrap() == vec![Edit::Match, Edit::Match, Edit::Match, Edit::Mismatch, Edit::Match]);
 }
