@@ -9,7 +9,8 @@ fn bench_rand_hamming(c: &mut Criterion) {
     let mut group = c.benchmark_group("bench_rand_hamming");
 
     group.bench_function("hamming_naive", |b| b.iter(|| hamming_naive(&a_str, &b_str)));
-    group.bench_function("hamming_words", |b| b.iter(|| hamming_words(&a_str, &b_str)));
+    group.bench_function("hamming_words_64", |b| b.iter(|| hamming_words_64(&a_str, &b_str)));
+    group.bench_function("hamming_words_128", |b| b.iter(|| hamming_words_128(&a_str, &b_str)));
     group.bench_function("hamming_simd", |b| b.iter(|| hamming_simd(&a_str, &b_str)));
 
     group.finish();

@@ -25,7 +25,7 @@ fn test_basic_hamming_search_simd() {
 }
 
 #[test]
-fn test_basic_hamming_words() {
+fn test_basic_hamming_words_64() {
     let a_str = b"abc";
     let b_str = b"abd";
 
@@ -35,7 +35,22 @@ fn test_basic_hamming_words() {
     let mut b = alloc_str(b_str.len());
     fill_str(&mut b, b_str);
 
-    let dist = hamming_words(&a, &b);
+    let dist = hamming_words_64(&a, &b);
+    assert!(dist == 1);
+}
+
+#[test]
+fn test_basic_hamming_words_128() {
+    let a_str = b"abc";
+    let b_str = b"abd";
+
+    let mut a = alloc_str(a_str.len());
+    fill_str(&mut a, a_str);
+
+    let mut b = alloc_str(b_str.len());
+    fill_str(&mut b, b_str);
+
+    let dist = hamming_words_128(&a, &b);
     assert!(dist == 1);
 }
 

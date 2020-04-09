@@ -89,7 +89,52 @@ pub fn fill_str(dest: &mut [u8], src: &[u8]) {
     }
 }
 
-pub fn hamming_words(a: &[u8], b: &[u8]) -> u32 {
+pub fn hamming_words_64(a: &[u8], b: &[u8]) -> u32 {
+    assert!(a.len() == b.len());
+
+    unsafe {
+        let mut res = 0u32;
+        // the pointer address better be aligned for u64
+        // may not be in little endian
+        let a_ptr = a.as_ptr() as *const u64;
+        let b_ptr = b.as_ptr() as *const u64;
+        let words_len = (a.len() >> 3) as isize;
+
+        for i in 0..words_len {
+            // change to little endian omitted because it is not necessary in this case
+            let mut r = (*a_ptr.offset(i)) ^ (*b_ptr.offset(i));
+            // reduce or by "folding" one half of each byte onto the other multiple times
+            r |= r >> 4;
+            // ...00001111
+            r &= 0x0f0f0f0f0f0f0f0fu64;
+            r |= r >> 2;
+            // ...00110011
+            r &= 0x3333333333333333u64;
+            r |= r >> 1;
+            // ...01010101
+            r &= 0x5555555555555555u64;
+            res += r.count_ones();
+        }
+
+        let words_rem = a.len() & 7;
+
+        if words_rem > 0 {
+            let mut r = (*a_ptr.offset(words_len)) ^ (*b_ptr.offset(words_len));
+            r |= r >> 4;
+            r &= 0x0f0f0f0f0f0f0f0fu64;
+            r |= r >> 2;
+            r &= 0x3333333333333333u64;
+            r |= r >> 1;
+            r &= 0x5555555555555555u64;
+            // make sure to mask out bits outside the string lengths
+            res += (r & ((1u64 << ((words_rem as u64) << 3u64)) - 1u64)).count_ones();
+        }
+
+        res
+    }
+}
+
+pub fn hamming_words_128(a: &[u8], b: &[u8]) -> u32 {
     assert!(a.len() == b.len());
 
     unsafe {
@@ -926,10 +971,10 @@ unsafe fn levenshtein_search_simd_x86_avx2(needle: &[u8], haystack: &[u8], k: u3
         let mut sub = shift_left_x86_avx2(dp1); // zeros are shifted in
         sub = _mm256_adds_epi8(sub, match_mask); // add -1 if match
 
-        let sub_length = _mm256_adds_epi8(shift_left_x86_avx2(length1), ones);
+        let sub_length = _mm256_add_epi8(shift_left_x86_avx2(length1), ones);
 
         // gap in needle: dp2
-        let needle_gap_length = _mm256_adds_epi8(length2, ones);
+        let needle_gap_length = _mm256_add_epi8(length2, ones);
 
         // gap in haystack
         let haystack_gap = shift_left_x86_avx2(dp2); // zeros are shifted in
@@ -983,7 +1028,7 @@ unsafe fn triple_argmin_x86_avx2(sub: __m256i, a_gap: __m256i, b_gap: __m256i, t
     // return the edit used in addition to doing a min operation
     let mut res_min = _mm256_min_epi8(a_gap, b_gap);
     let a_gap_mask = _mm256_cmpeq_epi8(res_min, a_gap);
-    let mut res_arg = _mm256_adds_epi8(a_gap_mask, twos); // a gap: -1 + 2 = 1, b gap: 0 + 2 = 2
+    let mut res_arg = _mm256_add_epi8(a_gap_mask, twos); // a gap: -1 + 2 = 1, b gap: 0 + 2 = 2
 
     res_min = _mm256_min_epi8(sub, res_min);
     let sub_mask = _mm256_cmpeq_epi8(res_min, sub);
