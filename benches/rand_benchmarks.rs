@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, black_box};
 use rand::prelude::*;
 use triple_accel::*;
 
@@ -11,7 +11,8 @@ fn bench_rand_hamming(c: &mut Criterion) {
     group.bench_function("hamming_naive", |b| b.iter(|| hamming_naive(&a_str, &b_str)));
     group.bench_function("hamming_words_64", |b| b.iter(|| hamming_words_64(&a_str, &b_str)));
     group.bench_function("hamming_words_128", |b| b.iter(|| hamming_words_128(&a_str, &b_str)));
-    group.bench_function("hamming_simd", |b| b.iter(|| hamming_simd(&a_str, &b_str)));
+    group.bench_function("hamming_simd_movemask", |b| b.iter(|| hamming_simd_movemask(&a_str, &b_str)));
+    group.bench_function("hamming_simd_parallel", |b| b.iter(|| hamming_simd_parallel(&a_str, &b_str)));
 
     group.finish();
 }
@@ -31,9 +32,21 @@ fn bench_rand_hamming_search(c: &mut Criterion) {
 
 fn bench_rand_levenshtein(c: &mut Criterion) {
     let mut rng = thread_rng();
-    let (a_str, b_str) = rand_levenshtein_pair(1000, 30, &mut rng);
+    let (a_str, b_str) = rand_levenshtein_pair(1000, 100, &mut rng);
 
     let mut group = c.benchmark_group("bench_rand_levenshtein");
+
+    group.bench_function("levenshtein_naive", |b| b.iter(|| levenshtein_naive(&a_str, &b_str, false)));
+    group.bench_function("levenshtein_exp", |b| b.iter(|| levenshtein_exp(&a_str, &b_str, false)));
+
+    group.finish();
+}
+
+fn bench_rand_levenshtein_k(c: &mut Criterion) {
+    let mut rng = thread_rng();
+    let (a_str, b_str) = rand_levenshtein_pair(1000, 30, &mut rng);
+
+    let mut group = c.benchmark_group("bench_rand_levenshtein_k");
 
     group.bench_function("levenshtein_naive", |b| b.iter(|| levenshtein_naive(&a_str, &b_str, false)));
     group.bench_function("levenshtein_naive_k", |b| b.iter(|| levenshtein_naive_k(&a_str, &b_str, 30, false)));
@@ -55,7 +68,7 @@ fn bench_rand_levenshtein_search(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(bench_rand, bench_rand_hamming, bench_rand_hamming_search, bench_rand_levenshtein, bench_rand_levenshtein_search);
+criterion_group!(bench_rand, bench_rand_hamming, bench_rand_hamming_search, bench_rand_levenshtein, bench_rand_levenshtein_k, bench_rand_levenshtein_search);
 criterion_main!(bench_rand);
 
 fn rand_hamming_needle_haystack<R: Rng>(needle_len: usize, haystack_len: usize, num_match: usize, k: u32, rng: &mut R) -> (Vec<u8>, Vec<u8>) {
@@ -96,7 +109,7 @@ fn rand_hamming_pair<R: Rng>(length: usize, k: u32, rng: &mut R) -> (Vec<u8>, Ve
 fn rand_hamming_mutate<R: Rng>(a: &[u8], k: u32, rng: &mut R) -> Vec<u8> {
     let mut b = alloc_str(a.len());
     fill_str(&mut b, a);
-    let curr_k: usize = rng.gen_range(0, k as usize + 1);
+    let curr_k: usize = rng.gen_range((k / 2) as usize, k as usize + 1);
     let mut idx: Vec<usize> = (0usize..a.len()).collect();
     idx.shuffle(rng);
 
@@ -141,7 +154,7 @@ fn rand_levenshtein_pair<R: Rng>(length: usize, k: u32, rng: &mut R) -> (Vec<u8>
 
 fn rand_levenshtein_mutate<R: Rng>(a: &[u8], k: u32, rng: &mut R) -> Vec<u8> {
     let mut edits = vec![0u8; a.len()];
-    let curr_k: usize = rng.gen_range(0usize, k as usize + 1);
+    let curr_k: usize = rng.gen_range((k / 2) as usize, k as usize + 1);
     let mut idx: Vec<usize> = (0usize..a.len()).collect();
     idx.shuffle(rng);
 

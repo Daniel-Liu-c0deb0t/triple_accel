@@ -55,10 +55,18 @@ fn test_basic_hamming_words_128() {
 }
 
 #[test]
-fn test_basic_hamming_simd() {
+fn test_basic_hamming_simd_movemask() {
     let a = b"abc";
     let b = b"abd";
-    let dist = hamming_simd(a, b);
+    let dist = hamming_simd_movemask(a, b);
+    assert!(dist == 1);
+}
+
+#[test]
+fn test_basic_hamming_simd_parallel() {
+    let a = b"abc";
+    let b = b"abd";
+    let dist = hamming_simd_parallel(a, b);
     assert!(dist == 1);
 }
 
@@ -112,6 +120,60 @@ fn test_trace_on_levenshtein_naive() {
     let a3 = b"abcde";
     let b3 = b"abcce";
     res = levenshtein_naive(a3, b3, true);
+    assert!(res.0 == 1);
+    assert!(res.1.unwrap() == vec![Edit::Match, Edit::Match, Edit::Match, Edit::Mismatch, Edit::Match]);
+}
+
+#[test]
+fn test_basic_levenshtein_exp() {
+    let a1 = b"abcde";
+    let b1 = b" ab cde";
+    let mut res = levenshtein_exp(a1, b1, false);
+    assert!(res.0 == 2);
+    assert!(res.1.is_none());
+
+    let a2 = b"abcde";
+    let b2 = b"";
+    res = levenshtein_exp(a2, b2, false);
+    assert!(res.0 == 5);
+    assert!(res.1.is_none());
+
+    let a3 = b"abcde";
+    let b3 = b"abcdee";
+    res = levenshtein_exp(a3, b3, false);
+    assert!(res.0 == 1);
+    assert!(res.1.is_none());
+
+    let a4 = b"abcde";
+    let b4 = b"acde";
+    res = levenshtein_exp(a4, b4, false);
+    assert!(res.0 == 1);
+    assert!(res.1.is_none());
+
+    let a5 = b"abcde";
+    let b5 = b"abbde";
+    res = levenshtein_exp(a5, b5, false);
+    assert!(res.0 == 1);
+    assert!(res.1.is_none());
+}
+
+#[test]
+fn test_trace_on_levenshtein_exp() {
+    let a1 = b"abcde";
+    let b1 = b" ab cde";
+    let mut res = levenshtein_exp(a1, b1, true);
+    assert!(res.0 == 2);
+    assert!(res.1.unwrap() == vec![Edit::AGap, Edit::Match, Edit::Match, Edit::AGap, Edit::Match, Edit::Match, Edit::Match]);
+
+    let a2 = b"abcde";
+    let b2 = b"";
+    res = levenshtein_exp(a2, b2, true);
+    assert!(res.0 == 5);
+    assert!(res.1.unwrap() == vec![Edit::BGap, Edit::BGap, Edit::BGap, Edit::BGap, Edit::BGap]);
+
+    let a3 = b"abcde";
+    let b3 = b"abcce";
+    res = levenshtein_exp(a3, b3, true);
     assert!(res.0 == 1);
     assert!(res.1.unwrap() == vec![Edit::Match, Edit::Match, Edit::Match, Edit::Mismatch, Edit::Match]);
 }

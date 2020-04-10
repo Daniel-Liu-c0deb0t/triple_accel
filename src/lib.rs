@@ -28,9 +28,7 @@ pub fn hamming_naive(a: &[u8], b: &[u8]) -> u32 {
     let mut res = 0u32;
 
     for i in 0..len {
-        if a[i] != b[i] {
-            res += 1;
-        }
+        res += (a[i] != b[i]) as u32;
     }
 
     res
@@ -49,9 +47,7 @@ pub fn hamming_search_naive(needle: &[u8], haystack: &[u8], k: u32) -> Vec<Match
         let mut final_res = 0u32;
 
         for j in 0..needle_len {
-            if needle[j] != haystack[i + j] {
-                final_res += 1;
-            }
+            final_res += (needle[j] != haystack[i + j]) as u32;
 
             if final_res > k {
                 continue 'outer;
@@ -179,13 +175,13 @@ pub fn hamming_words_128(a: &[u8], b: &[u8]) -> u32 {
     }
 }
 
-pub fn hamming_simd(a: &[u8], b: &[u8]) -> u32 {
+pub fn hamming_simd_parallel(a: &[u8], b: &[u8]) -> u32 {
     assert!(a.len() == b.len());
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {hamming_simd_x86_avx2(a, b)};
+            return unsafe {hamming_simd_parallel_x86_avx2(a, b)};
         }
     }
 
@@ -196,7 +192,72 @@ pub fn hamming_simd(a: &[u8], b: &[u8]) -> u32 {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn hamming_simd_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
+unsafe fn hamming_simd_parallel_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
+    let len = a.len();
+    let refresh_len = (len / (255 * 32)) as isize;
+    let a_ptr = a.as_ptr() as *const __m256i;
+    let b_ptr = b.as_ptr() as *const __m256i;
+    let zeros = _mm256_setzero_si256();
+    let mut sad = zeros;
+
+    for i in 0..refresh_len {
+        let mut curr = zeros;
+
+        for j in (i * 255)..((i + 1) * 255) {
+            let a = _mm256_loadu_si256(a_ptr.offset(j));
+            let b = _mm256_loadu_si256(b_ptr.offset(j));
+            let r = _mm256_cmpeq_epi8(a, b);
+            curr = _mm256_subs_epu8(curr, r); // subtract -1 = add 1 when matching
+            // counting matches instead of mismatches for speed
+        }
+
+        // subtract 0 and sum up 8 bytes at once horizontally into four 64 bit ints
+        // accumulate those 64 bit ints
+        sad = _mm256_add_epi64(sad, _mm256_sad_epu8(curr, zeros));
+    }
+
+    let word_len = len >> 5;
+    let mut curr = zeros;
+
+    // leftover blocks of 32 bytes
+    for i in (refresh_len * 255)..word_len as isize {
+        let a = _mm256_loadu_si256(a_ptr.offset(i));
+        let b = _mm256_loadu_si256(b_ptr.offset(i));
+        let r = _mm256_cmpeq_epi8(a, b);
+        curr = _mm256_subs_epu8(curr, r); // subtract -1 = add 1 when matching
+    }
+
+    sad = _mm256_add_epi64(sad, _mm256_sad_epu8(curr, zeros));
+    let mut sad_arr = [0u32; 8];
+    _mm256_storeu_si256(sad_arr.as_mut_ptr() as *mut __m256i, sad);
+    let mut res = sad_arr[0] + sad_arr[2] + sad_arr[4] + sad_arr[6];
+
+    // leftover characters
+    for i in (word_len << 5)..len {
+        res += (*a.get_unchecked(i) == *b.get_unchecked(i)) as u32;
+    }
+
+    len as u32 - res
+}
+
+pub fn hamming_simd_movemask(a: &[u8], b: &[u8]) -> u32 {
+    assert!(a.len() == b.len());
+
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return unsafe {hamming_simd_movemask_x86_avx2(a, b)};
+        }
+    }
+
+    // todo: sse support and fallback to hamming_words
+
+    unimplemented!();
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn hamming_simd_movemask_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
     let mut res = 0u32;
     let len = a.len();
     let word_len = len >> 5;
@@ -215,9 +276,7 @@ unsafe fn hamming_simd_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
 
     // leftover characters
     for i in (word_len << 5)..len {
-        if *a.get_unchecked(i) != *b.get_unchecked(i) {
-            res += 1;
-        }
+        res += (*a.get_unchecked(i) != *b.get_unchecked(i)) as u32;
     }
 
     res
@@ -280,9 +339,7 @@ unsafe fn hamming_search_simd_x86_avx2(needle: &[u8], haystack: &[u8], k: u32) -
         let mut final_res = 0u32;
 
         for j in 0..needle_len {
-            if *needle.get_unchecked(j) != *haystack.get_unchecked(i + j) {
-                final_res += 1;
-            }
+            final_res += (*needle.get_unchecked(j) != *haystack.get_unchecked(i + j)) as u32;
 
             if final_res > k {
                 continue 'outer;
@@ -323,7 +380,7 @@ pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec
         }
 
         for j in 1..len {
-            let sub = dp1[j - 1] + (if a_new[j - 1] == b_new[i - 1] {0} else {1});
+            let sub = dp1[j - 1] + (a_new[j - 1] != b_new[i - 1]) as u32;
             let a_gap = dp1[j] + 1;
             let b_gap = dp2[j - 1] + 1;
             let traceback_idx = i * len + j;
@@ -436,7 +493,7 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, 
                 if idx == 0 {
                     u32::max_value()
                 }else{
-                    dp1[idx - 1 - prev_lo] + (if a_new[i - 1] == b_new[idx - 1] {0} else {1})
+                    dp1[idx - 1 - prev_lo] + (a_new[i - 1] != b_new[idx - 1]) as u32
                 }
             };
             let a_gap = if j == 0 {u32::max_value()} else {dp2[j - 1] + 1};
@@ -820,6 +877,22 @@ unsafe fn traceback(arr: &[u8], mut idx: usize, a: &[u8], b: &[u8], swap: bool, 
     res
 }
 
+pub fn levenshtein_exp(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+    let mut k = 30;
+    let mut res = levenshtein_simd_k(a, b, k, false);
+
+    while res.0 > k {
+        k <<= 1;
+        res = levenshtein_naive_k(a, b, k, false);
+    }
+
+    if trace_on { // save memory by only calculating the traceback at the end, with an extra step
+        if res.0 <= 30 {levenshtein_simd_k(a, b, res.0, true)} else {levenshtein_naive_k(a, b, res.0, true)}
+    }else{
+        res
+    }
+}
+
 pub fn levenshtein_search_naive(needle: &[u8], haystack: &[u8], k: u32) -> Vec<Match> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
@@ -848,7 +921,7 @@ pub fn levenshtein_search_naive(needle: &[u8], haystack: &[u8], k: u32) -> Vec<M
         length2[0] = 0;
 
         for j in 1..len {
-            let sub = dp1[j - 1] + (if needle[j - 1] == haystack[i] {0} else {1});
+            let sub = dp1[j - 1] + (needle[j - 1] != haystack[i]) as u32;
             let a_gap = dp1[j] + 1;
             let b_gap = dp2[j - 1] + 1;
 
