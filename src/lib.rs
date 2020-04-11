@@ -199,9 +199,7 @@ pub fn hamming_simd_parallel(a: &[u8], b: &[u8]) -> u32 {
         }
     }
 
-    // todo: sse support and fallback to hamming_words
-
-    unimplemented!();
+    hamming_naive(a, b)
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -264,9 +262,7 @@ pub fn hamming_simd_movemask(a: &[u8], b: &[u8]) -> u32 {
         }
     }
 
-    // todo: sse support and fallback to hamming_words
-
-    unimplemented!();
+    hamming_naive(a, b)
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -311,9 +307,7 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
         }
     }
 
-    // todo: sse support and fallback
-
-    unimplemented!();
+    hamming_search_naive_k(needle, haystack, needle.len() as u32, true)
 }
 
 pub fn hamming_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
@@ -331,9 +325,7 @@ pub fn hamming_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: bool)
         }
     }
 
-    // todo: sse support and fallback
-
-    unimplemented!();
+    hamming_search_naive_k(needle, haystack, k, best)
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -625,9 +617,7 @@ pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, O
         }
     }
 
-    // todo: sse support and fallback
-
-    unimplemented!();
+    levenshtein_naive_k(a, b, k, trace_on)
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -1035,9 +1025,7 @@ pub fn levenshtein_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
         }
     }
 
-    // todo: sse support and fallback
-
-    unimplemented!();
+    levenshtein_search_naive_k(needle, haystack, needle.len() as u32, true)
 }
 
 pub fn levenshtein_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
@@ -1054,9 +1042,7 @@ pub fn levenshtein_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: b
         }
     }
 
-    // todo: sse support and fallback
-
-    unimplemented!();
+    levenshtein_search_naive_k(needle, haystack, k, best)
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
