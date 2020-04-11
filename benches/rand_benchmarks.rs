@@ -24,8 +24,8 @@ fn bench_rand_hamming_search(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("bench_rand_hamming_search");
 
-    group.bench_function("hamming_search_naive", |b| b.iter(|| hamming_search_naive(&needle, &haystack, k)));
-    group.bench_function("hamming_search_simd", |b| b.iter(|| hamming_search_simd(&needle, &haystack, k)));
+    group.bench_function("hamming_search_naive_k", |b| b.iter(|| hamming_search_naive_k(&needle, &haystack, k, false)));
+    group.bench_function("hamming_search_simd_k", |b| b.iter(|| hamming_search_simd_k(&needle, &haystack, k, false)));
 
     group.finish();
 }
@@ -62,8 +62,8 @@ fn bench_rand_levenshtein_search(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("bench_rand_levenshtein_search");
 
-    group.bench_function("levenshtein_search_naive", |b| b.iter(|| levenshtein_search_naive(&needle, &haystack, k)));
-    group.bench_function("levenshtein_search_simd", |b| b.iter(|| levenshtein_search_simd(&needle, &haystack, k)));
+    group.bench_function("levenshtein_search_naive_k", |b| b.iter(|| levenshtein_search_naive_k(&needle, &haystack, k, false)));
+    group.bench_function("levenshtein_search_simd_k", |b| b.iter(|| levenshtein_search_simd_k(&needle, &haystack, k, false)));
 
     group.finish();
 }
