@@ -3,67 +3,67 @@ use rand::prelude::*;
 use triple_accel::*;
 
 fn bench_rand_hamming(c: &mut Criterion) {
-    let mut rng = thread_rng();
+    let mut rng = StdRng::seed_from_u64(1234);
     let (a_str, b_str) = rand_hamming_pair(1000, 30, &mut rng);
 
     let mut group = c.benchmark_group("bench_rand_hamming");
 
-    group.bench_function("hamming_naive", |b| b.iter(|| hamming_naive(&a_str, &b_str)));
-    group.bench_function("hamming_words_64", |b| b.iter(|| hamming_words_64(&a_str, &b_str)));
-    group.bench_function("hamming_words_128", |b| b.iter(|| hamming_words_128(&a_str, &b_str)));
-    group.bench_function("hamming_simd_movemask", |b| b.iter(|| hamming_simd_movemask(&a_str, &b_str)));
-    group.bench_function("hamming_simd_parallel", |b| b.iter(|| hamming_simd_parallel(&a_str, &b_str)));
+    group.bench_function("hamming_naive", |b| b.iter(|| hamming_naive(black_box(&a_str), &b_str)));
+    group.bench_function("hamming_words_64", |b| b.iter(|| hamming_words_64(black_box(&a_str), &b_str)));
+    group.bench_function("hamming_words_128", |b| b.iter(|| hamming_words_128(black_box(&a_str), &b_str)));
+    group.bench_function("hamming_simd_movemask", |b| b.iter(|| hamming_simd_movemask(black_box(&a_str), &b_str)));
+    group.bench_function("hamming_simd_parallel", |b| b.iter(|| hamming_simd_parallel(black_box(&a_str), &b_str)));
 
     group.finish();
 }
 
 fn bench_rand_hamming_search(c: &mut Criterion) {
-    let mut rng = thread_rng();
+    let mut rng = StdRng::seed_from_u64(1234);
     let k = 16;
     let (needle, haystack) = rand_hamming_needle_haystack(32, 1000, 50, k, &mut rng);
 
     let mut group = c.benchmark_group("bench_rand_hamming_search");
 
-    group.bench_function("hamming_search_naive_k", |b| b.iter(|| hamming_search_naive_k(&needle, &haystack, k, false)));
-    group.bench_function("hamming_search_simd_k", |b| b.iter(|| hamming_search_simd_k(&needle, &haystack, k, false)));
+    group.bench_function("hamming_search_naive_k", |b| b.iter(|| hamming_search_naive_k(black_box(&needle), &haystack, k, false)));
+    group.bench_function("hamming_search_simd_k", |b| b.iter(|| hamming_search_simd_k(black_box(&needle), &haystack, k, false)));
 
     group.finish();
 }
 
 fn bench_rand_levenshtein(c: &mut Criterion) {
-    let mut rng = thread_rng();
+    let mut rng = StdRng::seed_from_u64(1234);
     let (a_str, b_str) = rand_levenshtein_pair(1000, 100, &mut rng);
 
     let mut group = c.benchmark_group("bench_rand_levenshtein");
 
-    group.bench_function("levenshtein_naive", |b| b.iter(|| levenshtein_naive(&a_str, &b_str, false)));
-    group.bench_function("levenshtein_exp", |b| b.iter(|| levenshtein_exp(&a_str, &b_str, false)));
+    group.bench_function("levenshtein_naive", |b| b.iter(|| levenshtein_naive(black_box(&a_str), &b_str, false)));
+    group.bench_function("levenshtein_exp", |b| b.iter(|| levenshtein_exp(black_box(&a_str), &b_str, false)));
 
     group.finish();
 }
 
 fn bench_rand_levenshtein_k(c: &mut Criterion) {
-    let mut rng = thread_rng();
+    let mut rng = StdRng::seed_from_u64(1234);
     let (a_str, b_str) = rand_levenshtein_pair(1000, 30, &mut rng);
 
     let mut group = c.benchmark_group("bench_rand_levenshtein_k");
 
-    group.bench_function("levenshtein_naive", |b| b.iter(|| levenshtein_naive(&a_str, &b_str, false)));
-    group.bench_function("levenshtein_naive_k", |b| b.iter(|| levenshtein_naive_k(&a_str, &b_str, 30, false)));
-    group.bench_function("levenshtein_simd_k", |b| b.iter(|| levenshtein_simd_k(&a_str, &b_str, 30, false)));
+    group.bench_function("levenshtein_naive", |b| b.iter(|| levenshtein_naive(black_box(&a_str), &b_str, false)));
+    group.bench_function("levenshtein_naive_k", |b| b.iter(|| levenshtein_naive_k(black_box(&a_str), &b_str, 30, false)));
+    group.bench_function("levenshtein_simd_k", |b| b.iter(|| levenshtein_simd_k(black_box(&a_str), &b_str, 30, false)));
 
     group.finish();
 }
 
 fn bench_rand_levenshtein_search(c: &mut Criterion) {
-    let mut rng = thread_rng();
+    let mut rng = StdRng::seed_from_u64(1234);
     let k = 16;
     let (needle, haystack) = rand_levenshtein_needle_haystack(32, 1000, 50, k, &mut rng);
 
     let mut group = c.benchmark_group("bench_rand_levenshtein_search");
 
-    group.bench_function("levenshtein_search_naive_k", |b| b.iter(|| levenshtein_search_naive_k(&needle, &haystack, k, false)));
-    group.bench_function("levenshtein_search_simd_k", |b| b.iter(|| levenshtein_search_simd_k(&needle, &haystack, k, false)));
+    group.bench_function("levenshtein_search_naive_k", |b| b.iter(|| levenshtein_search_naive_k(black_box(&needle), &haystack, k, false)));
+    group.bench_function("levenshtein_search_simd_k", |b| b.iter(|| levenshtein_search_simd_k(black_box(&needle), &haystack, k, false)));
 
     group.finish();
 }
