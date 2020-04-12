@@ -14,6 +14,9 @@ use core::arch::x86_64::*;
 /// * `a` - first string (slice)
 /// * `b` - second string (slice)
 ///
+/// # Panics
+/// * If the length of `a` does not equal the length of `b`.
+///
 /// # Example
 /// ```
 /// # use triple_accel::*;
@@ -35,7 +38,7 @@ pub fn hamming_naive(a: &[u8], b: &[u8]) -> u32 {
     res
 }
 
-/// Returns a vector of `Match`s by searching through the text `haystack` for the pattern `needle`.
+/// Returns a vector of best `Match`s by naively searching through the text `haystack` for the pattern `needle`.
 ///
 /// This is done by naively counting mismatches at every position in `haystack`.
 /// Only the matches with the lowest Hamming distance are returned.
@@ -57,7 +60,7 @@ pub fn hamming_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     hamming_search_naive_k(needle, haystack, needle.len() as u32, true)
 }
 
-/// Returns a vector of `Match`s by searching through the text `haystack` for the pattern `needle`.
+/// Returns a vector of `Match`s by naively searching through the text `haystack` for the pattern `needle`.
 ///
 /// Only matches with less than `k` mismatches are returned.
 /// This is done by naively counting mismatches at every position in `haystack`.
@@ -81,7 +84,9 @@ pub fn hamming_search_naive_k(needle: &[u8], haystack: &[u8], k: u32, best: bool
     let needle_len = needle.len();
     let haystack_len = haystack.len();
 
-    assert!(needle_len <= haystack_len);
+    if needle_len > haystack_len {
+        return vec![];
+    }
 
     let len = haystack_len + 1 - needle_len;
     let mut res = Vec::with_capacity(len >> 2);
@@ -123,6 +128,9 @@ pub fn hamming_search_naive_k(needle: &[u8], haystack: &[u8], k: u32, best: bool
 /// # Arguments
 /// * `a` - first string (slice)
 /// * `b` - second string (slice)
+///
+/// # Panics
+/// * If the length of `a` does not equal the length of `b`.
 ///
 /// # Example
 /// ```
@@ -194,6 +202,9 @@ pub fn hamming_words_64(a: &[u8], b: &[u8]) -> u32 {
 /// * `a` - first string (slice)
 /// * `b` - second string (slice)
 ///
+/// # Panics
+/// * If the length of `a` does not equal the length of `b`.
+///
 /// # Example
 /// ```
 /// # use triple_accel::*;
@@ -261,6 +272,9 @@ pub fn hamming_words_128(a: &[u8], b: &[u8]) -> u32 {
 /// # Arguments
 /// * `a` - first string (slice)
 /// * `b` - second string (slice)
+///
+/// # Panics
+/// * If the length of `a` does not equal the length of `b`.
 ///
 /// # Example
 /// ```
@@ -343,6 +357,9 @@ unsafe fn hamming_simd_parallel_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
 /// * `a` - first string (slice)
 /// * `b` - second string (slice)
 ///
+/// # Panics
+/// * If the length of `a` does not equal the length of `b`.
+///
 /// # Example
 /// ```
 /// # use triple_accel::*;
@@ -391,7 +408,7 @@ unsafe fn hamming_simd_movemask_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
     res
 }
 
-/// Returns a vector of `Match`s by searching through the text `haystack` for the pattern `needle`.
+/// Returns a vector of best `Match`s by searching through the text `haystack` for the pattern `needle` using AVX2.
 ///
 /// This is done by using AVX2 to count mismatches at every position in `haystack`.
 /// The length of `needle` must be less than or equal to the length of `haystack`. Additionally,
@@ -403,6 +420,9 @@ unsafe fn hamming_simd_movemask_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
 /// * `needle` - pattern string (slice)
 /// * `haystack` - text string (slice)
 ///
+/// # Panics
+/// * If needle length is greater than 32.
+///
 /// # Example
 /// ```
 /// # use triple_accel::*;
@@ -413,7 +433,10 @@ unsafe fn hamming_simd_movemask_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
 /// ```
 pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     assert!(needle.len() <= 32);
-    assert!(needle.len() <= haystack.len());
+
+    if needle.len() > haystack.len() {
+        return vec![];
+    }
 
     if needle.len() == 0 {
         return vec![];
@@ -429,7 +452,7 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     hamming_search_naive_k(needle, haystack, needle.len() as u32, true)
 }
 
-/// Returns a vector of `Match`s by searching through the text `haystack` for the pattern `needle`.
+/// Returns a vector of `Match`s by searching through the text `haystack` for the pattern `needle` using AVX2.
 ///
 /// This is done by using AVX2 to count mismatches at every position in `haystack`.
 /// The length of `needle` must be less than or equal to the length of `haystack`. Additionally,
@@ -442,6 +465,9 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// * `k` - number of mismatches allowed
 /// * `best` - whether to only return the "best" matches with the lowest Hamming distance
 ///
+/// # Panics
+/// * If needle length is greater than 32.
+///
 /// # Example
 /// ```
 /// # use triple_accel::*;
@@ -452,7 +478,10 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// ```
 pub fn hamming_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
     assert!(needle.len() <= 32);
-    assert!(needle.len() <= haystack.len());
+
+    if needle.len() > haystack.len() {
+        return vec![];
+    }
 
     if needle.len() == 0 {
         return vec![];

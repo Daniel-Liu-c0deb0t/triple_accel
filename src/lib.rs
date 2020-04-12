@@ -1,7 +1,8 @@
 //! # triple accel
 //! Hamming and Levenshtein distance routines that are accelerated using SIMD.
-//! Both searching for needle string in some haystack string and calculating the distance between
-//! two string are supported, along with other utility functions.
+//!
+//! This library provides routines for both searching for needle string in some haystack string
+//! and calculating the distance between two strings, along with other utility functions.
 //!
 //! The goal is an easy-to-use abstraction over SIMD edit distance routines, that
 //! falls back to non-SIMD routines if the target architecture is not supported.
@@ -61,7 +62,7 @@ pub enum Edit {
     BGap
 }
 
-/// This creates a vector with the alignment and padding for `u128` values, and then convert it to a vector of `u8` values. This `u8` vector is returned.
+/// This creates a vector with the alignment and padding for `u128` values, and then convert it to a vector of `u8` values that is returned.
 ///
 /// This is possible because u8 has looser alignment requirements than `u128`.
 /// This vector can be easily converted back to `u128` or `u64` later, for Hamming distance routines.
@@ -70,6 +71,15 @@ pub enum Edit {
 ///
 /// # Arguments
 /// * `len` - the length of the resulting array of u8 values
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let s = alloc_str(10);
+///
+/// assert!(s.len() == 10);
+/// ```
 #[inline]
 pub fn alloc_str(len: usize) -> Vec<u8> {
     let words_len = (len >> 4) + (if (len & 15) > 0 {1} else {0});
@@ -88,6 +98,21 @@ pub fn alloc_str(len: usize) -> Vec<u8> {
 /// # Arguments
 /// * `dest` - the destination slice
 /// * `src` - the source slice
+///
+/// # Panics
+/// * If the length of `src` is greater than the length of `dest`.
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let mut a = vec![0u8; 5];
+/// let b = vec![1u8, 2u8, 3u8, 4u8];
+///
+/// fill_str(&mut a, &b);
+///
+/// assert!(a == vec![1u8, 2u8, 3u8, 4u8, 0u8]);
+/// ```
 #[inline]
 pub fn fill_str(dest: &mut [u8], src: &[u8]) {
     assert!(dest.len() >= src.len());
