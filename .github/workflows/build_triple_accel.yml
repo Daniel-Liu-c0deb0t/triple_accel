@@ -1,4 +1,4 @@
-name: build_triple_accel
+name: Build triple accel
 
 on:
   push:
