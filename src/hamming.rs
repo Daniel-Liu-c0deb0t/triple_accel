@@ -6,6 +6,22 @@ use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
+/// Returns the hamming distance between two strings by naively counting mismatches.
+///
+/// The length of `a` and `b` must be the same.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let dist = hamming_naive(b"abc", b"abd");
+///
+/// assert!(dist == 1);
+/// ```
 pub fn hamming_naive(a: &[u8], b: &[u8]) -> u32 {
     let len = a.len();
     assert!(len == b.len());
@@ -19,11 +35,48 @@ pub fn hamming_naive(a: &[u8], b: &[u8]) -> u32 {
     res
 }
 
-
+/// Returns a vector of `Match`s by searching through the text `haystack` for the pattern `needle`.
+///
+/// This is done by naively counting mismatches at every position in `haystack`.
+/// Only the matches with the lowest Hamming distance are returned.
+/// The length of `needle` must be less than or equal to the length of `haystack`.
+///
+/// # Arguments
+/// * `needle` - pattern string (slice)
+/// * `haystack` - text string (slice)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let matches = hamming_search_naive(b"abc", b"  abd");
+///
+/// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
+/// ```
 pub fn hamming_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     hamming_search_naive_k(needle, haystack, needle.len() as u32, true)
 }
 
+/// Returns a vector of `Match`s by searching through the text `haystack` for the pattern `needle`.
+///
+/// Only matches with less than `k` mismatches are returned.
+/// This is done by naively counting mismatches at every position in `haystack`.
+/// The length of `needle` must be less than or equal to the length of `haystack`.
+///
+/// # Arguments
+/// * `needle` - pattern string (slice)
+/// * `haystack` - text string (slice)
+/// * `k` - number of mismatches allowed
+/// * `best` - whether to only return the "best" matches with the lowest Hamming distance
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let matches = hamming_search_naive_k(b"abc", b"  abd", 1, false);
+///
+/// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
+/// ```
 pub fn hamming_search_naive_k(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
@@ -59,6 +112,31 @@ pub fn hamming_search_naive_k(needle: &[u8], haystack: &[u8], k: u32, best: bool
     res
 }
 
+/// Returns the hamming distance between two strings by efficiently counting mismatches in chunks of 64 bits.
+///
+/// The length of `a` and `b` must be the same.
+/// Both `a` and `b` must be aligned and padded so they can be directly casted to chunks of `u64`.
+/// Use `alloc_str` to create aligned and padded strings.
+/// This should be faster than `hamming_naive` and maybe even `hamming_words_128`. This should be slower
+/// than `hamming_simd_parallel/movemask`.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let mut a = alloc_str(3);
+/// let mut b = alloc_str(3);
+/// fill_str(&mut a, b"abc");
+/// fill_str(&mut b, b"abd");
+///
+/// let dist = hamming_words_64(&a, &b);
+///
+/// assert!(dist == 1);
+/// ```
 pub fn hamming_words_64(a: &[u8], b: &[u8]) -> u32 {
     assert!(a.len() == b.len());
 
@@ -104,6 +182,31 @@ pub fn hamming_words_64(a: &[u8], b: &[u8]) -> u32 {
     }
 }
 
+/// Returns the hamming distance between two strings by counting mismatches in chunks of 128 bits.
+///
+/// The length of `a` and `b` must be the same.
+/// Both `a` and `b` must be aligned and padded so they can be directly casted to chunks of `u128`.
+/// Use `alloc_str` to create aligned and padded strings.
+/// This may be slower than `hamming_words_64` in practice, probably since Rust `u128` is not as
+/// optimized. This should be slower than `hamming_simd_parallel/movemask`.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let mut a = alloc_str(3);
+/// let mut b = alloc_str(3);
+/// fill_str(&mut a, b"abc");
+/// fill_str(&mut b, b"abd");
+///
+/// let dist = hamming_words_128(&a, &b);
+///
+/// assert!(dist == 1);
+/// ```
 pub fn hamming_words_128(a: &[u8], b: &[u8]) -> u32 {
     assert!(a.len() == b.len());
 
@@ -149,6 +252,24 @@ pub fn hamming_words_128(a: &[u8], b: &[u8]) -> u32 {
     }
 }
 
+/// Returns the hamming distance between two strings by counting mismatches in chunks of 256 bits, by using AVX2 to increment multiple counters in parallel.
+///
+/// The length of `a` and `b` must be the same.
+/// There are no constraints on how `a` and `b` are aligned and padded.
+/// This should be faster than both `hamming_word_64/128` and `hamming_simd_movemask`.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let dist = hamming_simd_parallel(b"abc", b"abd");
+///
+/// assert!(dist == 1);
+/// ```
 pub fn hamming_simd_parallel(a: &[u8], b: &[u8]) -> u32 {
     assert!(a.len() == b.len());
 
@@ -212,6 +333,24 @@ unsafe fn hamming_simd_parallel_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
     len as u32 - res
 }
 
+/// Returns the hamming distance between two strings by counting mismatches in chunks of 256 bits, by using AVX2's movemask instruction.
+///
+/// The length of `a` and `b` must be the same.
+/// There are no constraints on how `a` and `b` are aligned and padded.
+/// This should be faster than `hamming_word_64/128`, but slower than `hamming_simd_parallel`.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let dist = hamming_simd_movemask(b"abc", b"abd");
+///
+/// assert!(dist == 1);
+/// ```
 pub fn hamming_simd_movemask(a: &[u8], b: &[u8]) -> u32 {
     assert!(a.len() == b.len());
 
@@ -252,6 +391,26 @@ unsafe fn hamming_simd_movemask_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
     res
 }
 
+/// Returns a vector of `Match`s by searching through the text `haystack` for the pattern `needle`.
+///
+/// This is done by using AVX2 to count mismatches at every position in `haystack`.
+/// The length of `needle` must be less than or equal to the length of `haystack`. Additionally,
+/// the length of needle must be less than or equal to 32.
+/// Only the matches with the lowest Hamming distance are returned.
+/// This should be faster than `hamming_search_naive`.
+///
+/// # Arguments
+/// * `needle` - pattern string (slice)
+/// * `haystack` - text string (slice)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let matches = hamming_search_simd(b"abc", b"  abd");
+///
+/// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
+/// ```
 pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     assert!(needle.len() <= 32);
     assert!(needle.len() <= haystack.len());
@@ -270,6 +429,27 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     hamming_search_naive_k(needle, haystack, needle.len() as u32, true)
 }
 
+/// Returns a vector of `Match`s by searching through the text `haystack` for the pattern `needle`.
+///
+/// This is done by using AVX2 to count mismatches at every position in `haystack`.
+/// The length of `needle` must be less than or equal to the length of `haystack`. Additionally,
+/// the length of needle must be less than or equal to 32.
+/// This should be faster than `hamming_search_naive_k`.
+///
+/// # Arguments
+/// * `needle` - pattern string (slice)
+/// * `haystack` - text string (slice)
+/// * `k` - number of mismatches allowed
+/// * `best` - whether to only return the "best" matches with the lowest Hamming distance
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let matches = hamming_search_simd_k(b"abc", b"  abd", 1, false);
+///
+/// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
+/// ```
 pub fn hamming_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
     assert!(needle.len() <= 32);
     assert!(needle.len() <= haystack.len());
