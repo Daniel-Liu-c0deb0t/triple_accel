@@ -1,4 +1,6 @@
 # triple accel
+![Build triple accel](https://github.com/Daniel-Liu-c0deb0t/triple_accel/workflows/Build%20triple%20accel/badge.svg)
+
 Hamming and Levenshtein distance accelerated with SIMD in Rust.
 
 ## Features
