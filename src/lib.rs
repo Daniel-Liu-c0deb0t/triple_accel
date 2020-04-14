@@ -23,6 +23,7 @@
 
 use std;
 
+mod jewel;
 mod hamming;
 mod levenshtein;
 
