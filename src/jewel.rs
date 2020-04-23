@@ -10,7 +10,8 @@ use core::arch::x86_64::*;
 ///
 /// To save space, most operations are modify in place.
 trait Jewel {
-    unsafe fn new(val: u32, len: usize);
+    unsafe fn repeating(val: u32, len: usize) -> Self;
+    unsafe fn loadu(ptr: *const u8, len: usize) -> Self;
     unsafe fn slow_loadu(&mut self, idx: usize, ptr: *const u8, len: usize, reverse: bool);
     unsafe fn fast_loadu(&mut self, ptr: *const u8);
     unsafe fn add(&mut self, o: Self);
@@ -21,12 +22,11 @@ trait Jewel {
     unsafe fn cmpeq(&mut self, o: Self);
     unsafe fn cmpgt(&mut self, o: Self);
     unsafe fn blendv(&mut self, o: Self, mask: Self);
-    unsafe fn mm_count_zeros(&mut self, o: Self) -> u32;
-    unsafe fn mm_count_ones(&mut self, o: Self) -> u32;
-    unsafe fn count_ones(&mut self, o: Self) -> u32;
-    unsafe fn shift_left(&mut self);
-    unsafe fn shift_right(&mut self);
-    unsafe fn extract(&mut self, i: usize) -> u32;
+    unsafe fn mm_count_mismatches(&self, o: Self, len: usize) -> u32;
+    unsafe fn count_mismatches(&self, o: Self, len: usize) -> u32;
+    unsafe fn shift_left_1(&mut self);
+    unsafe fn shift_right_1(&mut self);
+    unsafe fn extract(&self, i: usize) -> u32;
     unsafe fn insert_last_0(&mut self, val: u32);
     unsafe fn insert_last_1(&mut self, val: u32);
     unsafe fn insert_last_2(&mut self, val: u32);
@@ -42,46 +42,40 @@ struct AvxNx32x8 {
     v: Vec<__m256i>
 }
 
-impl fmt::Display for AvxNx32x8 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "[")?;
-
-        let mut arr = [0u8; 32];
-        let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
-
-        for i in 0..(self.v.len() - 1) {
-            _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(i));
-
-            for j in 0..32 {
-                write!(f, "{:>3}, ", arr[i])?;
-            }
-        }
-
-        // leftover elements
-
-        _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
-
-        let start = (self.v.len() - 1) << 5;
-
-        for i in 0..(self.len - start) {
-            if i == self.len - start - 1 {
-                write!(f, "{:>3}", arr[i])?;
-            }else{
-                write!(f, "{:>3}, ", arr[i])?;
-            }
-        }
-
-        write!(f, "]")
-    }
-}
-
 impl Jewel for AvxNx32x8 {
-    unsafe fn new(val: u32, len: usize) {
-        let mut v = vec![_mm256_set1_epi8(val as i8; (len >> 5) + if (len & 31) > 0 {1} else {0}];
+    unsafe fn repeating(val: u32, len: usize) -> AvxNx32x8 {
+        let v = vec![_mm256_set1_epi8(val as i8); (len >> 5) + if (len & 31) > 0 {1} else {0}];
 
         AvxNx32x8{
             len: len,
             v: v
+        }
+    }
+
+    unsafe fn loadu(ptr: *const u8, len: usize) -> AvxNx32x8 {
+        let word_len = len >> 5;
+        let word_rem = len & 31;
+        let v = Vec::with_capacity(word_len + if word_rem > 0 {1} else {0});
+        let avx2_ptr = ptr as *const __m256i;
+
+        for i in 0..word_len {
+            *v.get_unchecked_mut(i) = _mm256_loadu_si256(avx2_ptr.offset(i as isize));
+        }
+
+        if word_rem > 0 {
+            let mut arr = [0u8; 32];
+            let end_ptr = ptr.offset(word_len << 5);
+
+            for i in 0..word_rem {
+                *arr.get_unchecked_mut(i) = *end_ptr.offset(i);
+            }
+
+            *v.get_unchecked_mut(word_len) = _mm256_loadu_si256(arr.as_ptr() as *const __m256i);
+        }
+
+        AvxNx32x8{
+            v: v,
+            len: len
         }
     }
 
@@ -92,20 +86,19 @@ impl Jewel for AvxNx32x8 {
 
         let mut arr = [0u8; 32];
         let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
-        let sign = if reverse {-1} else {1};
 
         for i in 0..len {
-            let curr_idx = idx + sign * i;
+            let curr_idx = if reverse {idx - i} else {idx + i};
             let arr_idx = curr_idx & 31;
 
             if arr_idx == 0 || i == 0 {
-                _mm256_storeu_si256(arr_ptr, *v.get_unchecked(curr_idx >> 5));
+                _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(curr_idx >> 5));
             }
 
             *arr.get_unchecked_mut(arr_idx) = *ptr.offset(i as isize);
 
             if arr_idx == 31 || i == len - 1 {
-                *v.get_unchecked_mut(curr_idx >> 5) = _mm256_loadu_si256(arr_ptr);
+                *self.v.get_unchecked_mut(curr_idx >> 5) = _mm256_loadu_si256(arr_ptr);
             }
         }
     }
@@ -113,17 +106,9 @@ impl Jewel for AvxNx32x8 {
     unsafe fn fast_loadu(&mut self, ptr: *const u8) {
         let avx2_ptr = ptr as *const __m256i;
 
-        for i in 0..self.v.len() as isize {
-            *v.get_unchecked_mut(i) = _mm256_loadu_si256(*avx2_ptr.offset(i));
+        for i in 0..self.v.len() {
+            *self.v.get_unchecked_mut(i) = _mm256_loadu_si256(avx2_ptr.offset(i as isize));
         }
-    }
-
-    unsafe fn extract(&mut self, i: usize) -> u32 {
-        let idx = i >> 5;
-        let j = i & 31;
-        let mut arr = [0u8; 32];
-        _mm256_storeu_si256(arr.as_mut_ptr() as *mut __m256i, *v.get_unchecked(idx));
-        *arr.get_unchecked(j) as u32
     }
 
     unsafe fn add(&mut self, o: AvxNx32x8) {
@@ -174,39 +159,70 @@ impl Jewel for AvxNx32x8 {
         }
     }
 
-    unsafe fn mm_count_ones(&mut self, len: usize) -> u32 {
+    unsafe fn mm_count_mismatches(&self, o: AvxNx32x8, len: usize) -> u32 {
         let mut res = 0u32;
         let div_len = len >> 5;
 
         for i in 0..div_len {
-            res += _mm256_movemask_epi8(*self.v.get_unchecked(i)).count_ones();
+            let eq = _mm256_cmpeq_epi8(*self.v.get_unchecked(i), *o.v.get_unchecked(i));
+            res += _mm256_movemask_epi8(eq).count_ones();
         }
 
         let rem_len = len & 31;
-        res += (_mm256_movemask_epi8(*self.v.get_unchecked(i)) & ((1 << rem_len) - 1)).count_ones();
 
-        res
-    }
-
-    unsafe fn mm_count_zeros(&mut self, len: usize) -> u32 {
-        let mut res = 0u32;
-        let div_len = len >> 5;
-
-        for i in 0..div_len {
-            res += _mm256_movemask_epi8(*self.v.get_unchecked(i)).count_zeros();
+        if rem_len > 0 {
+            let eq = _mm256_cmpeq_epi8(*self.v.get_unchecked(div_len), *o.v.get_unchecked(div_len));
+            res += (_mm256_movemask_epi8(eq) & ((1 << rem_len) - 1)).count_ones();
         }
 
-        let rem_len = len & 31;
-        res += ((!_mm256_movemask_epi8(*self.v.get_unchecked(i))) & ((1 << rem_len) - 1)).count_ones();
-
-        res
+        len as u32 - res
     }
 
-    unsafe fn count_ones(&mut self, len: usize) -> u32 {
+    unsafe fn count_mismatches(&self, o: AvxNx32x8, len: usize) -> u32 {
+        let refresh_len = len / (255 * 32);
+        let zeros = _mm256_setzero_si256();
+        let mut sad = zeros;
 
+        for i in 0..refresh_len {
+            let mut curr = zeros;
+
+            for j in (i * 255)..((i + 1) * 255) {
+                let eq = _mm256_cmpeq_epi8(*self.v.get_unchecked(j), *o.v.get_unchecked(j));
+                curr = _mm256_subs_epu8(curr, eq); // subtract -1 = add 1 when matching
+                // counting matches instead of mismatches for speed
+            }
+
+            // subtract 0 and sum up 8 bytes at once horizontally into four 64 bit ints
+            // accumulate those 64 bit ints
+            sad = _mm256_add_epi64(sad, _mm256_sad_epu8(curr, zeros));
+        }
+
+        let word_len = len >> 5;
+        let mut curr = zeros;
+
+        // leftover blocks of 32 bytes
+        for i in (refresh_len * 255)..word_len {
+            let eq = _mm256_cmpeq_epi8(*self.v.get_unchecked(i), *o.v.get_unchecked(i));
+            curr = _mm256_subs_epu8(curr, eq); // subtract -1 = add 1 when matching
+        }
+
+        sad = _mm256_add_epi64(sad, _mm256_sad_epu8(curr, zeros));
+        let mut sad_arr = [0u32; 8];
+        _mm256_storeu_si256(sad_arr.as_mut_ptr() as *mut __m256i, sad);
+        let mut res = *sad_arr.get_unchecked(0) + *sad_arr.get_unchecked(2)
+            + *sad_arr.get_unchecked(4) + *sad_arr.get_unchecked(6);
+
+        let word_rem = len & 31;
+
+        if word_rem > 0 {
+            let eq = _mm256_cmpeq_epi8(*self.v.get_unchecked(word_len), *o.v.get_unchecked(word_len));
+            res += (_mm256_movemask_epi8(eq) & ((1 << word_rem) - 1)).count_ones();
+        }
+
+        len as u32 - res
     }
 
-    unsafe fn shift_left(&mut self) {
+    unsafe fn shift_left_1(&mut self) {
         for i in 0..(self.v.len() - 1) {
             let curr = self.v.get_unchecked(i);
             // permute concatenates the second half of the current vector and the first half of the next vector
@@ -221,8 +237,8 @@ impl Jewel for AvxNx32x8 {
         *self.v.get_unchecked_mut(last) = _mm256_alignr_epi8(_mm256_permute2x128_si256(*curr, *curr, 0b10000001i32), *curr, 1i32);
     }
 
-    unsafe fn shift_right(&mut self) {
-        for i in (1..self.len()).rev() {
+    unsafe fn shift_right_1(&mut self) {
+        for i in (1..self.v.len()).rev() {
             let curr = self.v.get_unchecked(i);
             // permute concatenates the second half of the previous vector and the first half of the current vector
             *self.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
@@ -232,14 +248,14 @@ impl Jewel for AvxNx32x8 {
         // first one gets to shift in zeros
         let curr = self.v.get_unchecked(0);
         // permute concatenates a vector of zeros and the first half of the first vector
-        *self.v.get_uncheched_mut(0) = _mm256_alignr_epi8(*curr, _mm256_permute2x128_si256(*curr, *curr, 0b00001000i32), 15i32);
+        *self.v.get_unchecked_mut(0) = _mm256_alignr_epi8(*curr, _mm256_permute2x128_si256(*curr, *curr, 0b00001000i32), 15i32);
     }
 
-    unsafe fn extract(&mut self, i: usize) -> u32 {
+    unsafe fn extract(&self, i: usize) -> u32 {
         let idx = i >> 5;
         let j = i & 31;
         let mut arr = [0u8; 32];
-        _mm256_storeu_si256(arr.as_mut_ptr() as *mut __m256i, *v.get_unchecked(idx));
+        _mm256_storeu_si256(arr.as_mut_ptr() as *mut __m256i, *self.v.get_unchecked(idx));
         *arr.get_unchecked(j) as u32
     }
 
@@ -269,5 +285,40 @@ impl Jewel for AvxNx32x8 {
 
     unsafe fn insert_first_max(&mut self) {
         *self.v.get_unchecked_mut(0) = _mm256_insert_epi8(*self.v.get_unchecked(0), i8::max_value(), 0i32);
+    }
+}
+
+impl fmt::Display for AvxNx32x8 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        unsafe {
+            write!(f, "[")?;
+
+            let mut arr = [0u8; 32];
+            let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
+
+            for i in 0..(self.v.len() - 1) {
+                _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(i));
+
+                for j in 0..32 {
+                    write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                }
+            }
+
+            // leftover elements
+
+            _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
+
+            let start = (self.v.len() - 1) << 5;
+
+            for i in 0..(self.len - start) {
+                if i == self.len - start - 1 {
+                    write!(f, "{:>3}", *arr.get_unchecked(i))?;
+                }else{
+                    write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                }
+            }
+
+            write!(f, "]")
+        }
     }
 }
