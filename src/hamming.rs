@@ -1,10 +1,5 @@
 use super::*;
-
-#[cfg(target_arch = "x86")]
-use core::arch::x86::*;
-
-#[cfg(target_arch = "x86_64")]
-use core::arch::x86_64::*;
+use super::jewel::*;
 
 /// Returns the hamming distance between two strings by naively counting mismatches.
 ///
@@ -290,7 +285,7 @@ pub fn hamming_simd_parallel(a: &[u8], b: &[u8]) -> u32 {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {hamming_simd_parallel_x86_avx2(a, b)};
+            return unsafe {hamming_simd_parallel_x86_avx2::<AvxNx32x8>(a, b)};
         }
     }
 
@@ -299,52 +294,8 @@ pub fn hamming_simd_parallel(a: &[u8], b: &[u8]) -> u32 {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn hamming_simd_parallel_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
-    let len = a.len();
-    let refresh_len = (len / (255 * 32)) as isize;
-    let a_ptr = a.as_ptr() as *const __m256i;
-    let b_ptr = b.as_ptr() as *const __m256i;
-    let zeros = _mm256_setzero_si256();
-    let mut sad = zeros;
-
-    for i in 0..refresh_len {
-        let mut curr = zeros;
-
-        for j in (i * 255)..((i + 1) * 255) {
-            let a = _mm256_loadu_si256(a_ptr.offset(j));
-            let b = _mm256_loadu_si256(b_ptr.offset(j));
-            let r = _mm256_cmpeq_epi8(a, b);
-            curr = _mm256_subs_epu8(curr, r); // subtract -1 = add 1 when matching
-            // counting matches instead of mismatches for speed
-        }
-
-        // subtract 0 and sum up 8 bytes at once horizontally into four 64 bit ints
-        // accumulate those 64 bit ints
-        sad = _mm256_add_epi64(sad, _mm256_sad_epu8(curr, zeros));
-    }
-
-    let word_len = len >> 5;
-    let mut curr = zeros;
-
-    // leftover blocks of 32 bytes
-    for i in (refresh_len * 255)..word_len as isize {
-        let a = _mm256_loadu_si256(a_ptr.offset(i));
-        let b = _mm256_loadu_si256(b_ptr.offset(i));
-        let r = _mm256_cmpeq_epi8(a, b);
-        curr = _mm256_subs_epu8(curr, r); // subtract -1 = add 1 when matching
-    }
-
-    sad = _mm256_add_epi64(sad, _mm256_sad_epu8(curr, zeros));
-    let mut sad_arr = [0u32; 8];
-    _mm256_storeu_si256(sad_arr.as_mut_ptr() as *mut __m256i, sad);
-    let mut res = sad_arr[0] + sad_arr[2] + sad_arr[4] + sad_arr[6];
-
-    // leftover characters
-    for i in (word_len << 5)..len {
-        res += (*a.get_unchecked(i) == *b.get_unchecked(i)) as u32;
-    }
-
-    len as u32 - res
+unsafe fn hamming_simd_parallel_x86_avx2<T: Jewel>(a: &[u8], b: &[u8]) -> u32 {
+    T::count_mismatches(a.as_ptr(), b.as_ptr(), a.len())
 }
 
 /// Returns the hamming distance between two strings by counting mismatches in chunks of 256 bits, by using AVX2's movemask instruction.
@@ -374,7 +325,7 @@ pub fn hamming_simd_movemask(a: &[u8], b: &[u8]) -> u32 {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {hamming_simd_movemask_x86_avx2(a, b)};
+            return unsafe {hamming_simd_movemask_x86_avx2::<AvxNx32x8>(a, b)};
         }
     }
 
@@ -383,29 +334,8 @@ pub fn hamming_simd_movemask(a: &[u8], b: &[u8]) -> u32 {
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn hamming_simd_movemask_x86_avx2(a: &[u8], b: &[u8]) -> u32 {
-    let mut res = 0u32;
-    let len = a.len();
-    let word_len = len >> 5;
-    let a_ptr = a.as_ptr() as *const __m256i;
-    let b_ptr = b.as_ptr() as *const __m256i;
-
-    for i in 0..word_len as isize {
-        // unaligned, so must use loadu
-        let a = _mm256_loadu_si256(a_ptr.offset(i));
-        let b = _mm256_loadu_si256(b_ptr.offset(i));
-        // directly check if equal
-        let r = _mm256_cmpeq_epi8(a, b);
-        // pack the 32 bytes into a 32-bit int and count not equal
-        res += _mm256_movemask_epi8(r).count_zeros();
-    }
-
-    // leftover characters
-    for i in (word_len << 5)..len {
-        res += (*a.get_unchecked(i) != *b.get_unchecked(i)) as u32;
-    }
-
-    res
+unsafe fn hamming_simd_movemask_x86_avx2<T: Jewel>(a: &[u8], b: &[u8]) -> u32 {
+    T::mm_count_mismatches(a.as_ptr(), b.as_ptr(), a.len())
 }
 
 /// Returns a vector of best `Match`s by searching through the text `haystack` for the pattern `needle` using AVX2.
@@ -445,7 +375,7 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {hamming_search_simd_x86_avx2(needle, haystack, needle.len() as u32, true)};
+            return unsafe {hamming_search_simd_x86_avx2::<AvxNx32x8>(needle, haystack, needle.len() as u32, true)};
         }
     }
 
@@ -490,7 +420,7 @@ pub fn hamming_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: bool)
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {hamming_search_simd_x86_avx2(needle, haystack, k, best)};
+            return unsafe {hamming_search_simd_x86_avx2::<AvxNx32x8>(needle, haystack, k, best)};
         }
     }
 
@@ -499,31 +429,17 @@ pub fn hamming_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: bool)
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn hamming_search_simd_x86_avx2(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
+unsafe fn hamming_search_simd_x86_avx2<T: Jewel>(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
     let needle_len = needle.len();
-    let haystack_len = haystack.len();
-    let real_len = haystack_len + 1 - needle_len;
-    let mut res = Vec::with_capacity(real_len >> 2);
-    // length if needle is a block of 32 bytes
-    let len = if haystack_len < 31 {0} else {haystack_len - 31};
+    let len = haystack.len() + 1 - needle_len;
+    let mut res = Vec::with_capacity(len >> 2);
+    let needle_ptr = needle.as_ptr();
     let haystack_ptr = haystack.as_ptr();
-    let mask = (1 << needle_len) - 1;
     let mut curr_k = k;
-    let a = {
-        if needle_len == 32 {
-            _mm256_loadu_si256(needle.as_ptr() as *const __m256i)
-        }else{ // padding
-            let mut arr = [0u8; 32];
-            fill_str(&mut arr, needle);
-            _mm256_loadu_si256(arr.as_ptr() as *const __m256i)
-        }
-    };
 
     // do blocks of 32 bytes at once
     for i in 0..len {
-        let b = _mm256_loadu_si256(haystack_ptr.offset(i as isize) as *const __m256i);
-        let r = _mm256_movemask_epi8(_mm256_cmpeq_epi8(a, b));
-        let final_res = ((!r) & mask).count_ones(); // mask out characters not in needle
+        let final_res = T::count_mismatches(needle_ptr, haystack_ptr.offset(i as isize), needle_len);
 
         if final_res <= curr_k {
             res.push(Match{start: i, end: i + needle_len, k: final_res});
@@ -531,25 +447,6 @@ unsafe fn hamming_search_simd_x86_avx2(needle: &[u8], haystack: &[u8], k: u32, b
             if best {
                 curr_k = final_res;
             }
-        }
-    }
-
-    // do leftover characters
-    'outer: for i in len..real_len {
-        let mut final_res = 0u32;
-
-        for j in 0..needle_len {
-            final_res += (*needle.get_unchecked(j) != *haystack.get_unchecked(i + j)) as u32;
-
-            if final_res > curr_k {
-                continue 'outer;
-            }
-        }
-
-        res.push(Match{start: i, end: i + needle_len, k: final_res});
-
-        if best {
-            curr_k = final_res;
         }
     }
 

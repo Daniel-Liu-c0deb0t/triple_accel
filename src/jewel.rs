@@ -9,21 +9,19 @@ use core::arch::x86_64::*;
 /// Jewel provides a uniform interface for SIMD operations.
 ///
 /// To save space, most operations are modify in place.
-trait Jewel {
+pub trait Jewel {
     unsafe fn repeating(val: u32, len: usize) -> Self;
     unsafe fn loadu(ptr: *const u8, len: usize) -> Self;
     unsafe fn slow_loadu(&mut self, idx: usize, ptr: *const u8, len: usize, reverse: bool);
     unsafe fn fast_loadu(&mut self, ptr: *const u8);
     unsafe fn add(&mut self, o: Self);
     unsafe fn adds(&mut self, o: Self);
-    unsafe fn subs(&mut self, o: Self);
+    unsafe fn sub(&mut self, o: Self);
     unsafe fn min(&mut self, o: Self);
     unsafe fn and(&mut self, o: Self);
     unsafe fn cmpeq(&mut self, o: Self);
     unsafe fn cmpgt(&mut self, o: Self);
     unsafe fn blendv(&mut self, o: Self, mask: Self);
-    unsafe fn mm_count_mismatches(&self, o: Self, len: usize) -> u32;
-    unsafe fn count_mismatches(&self, o: Self, len: usize) -> u32;
     unsafe fn shift_left_1(&mut self);
     unsafe fn shift_right_1(&mut self);
     unsafe fn extract(&self, i: usize) -> u32;
@@ -33,16 +31,24 @@ trait Jewel {
     unsafe fn insert_last_max(&mut self);
     unsafe fn insert_first(&mut self, val: u32);
     unsafe fn insert_first_max(&mut self);
+
+    // for speed, the count_mismatches functions do not require creating a Jewel vector
+    unsafe fn mm_count_mismatches(a_ptr: *const u8, b_ptr: *const u8, len: usize) -> u32;
+    unsafe fn count_mismatches(a_ptr: *const u8, b_ptr: *const u8, len: usize) -> u32;
 }
 
 /// N x 32 x 8 vector backed with 256-bit AVX2 vectors
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[derive(Clone)]
-struct AvxNx32x8 {
+pub struct AvxNx32x8 {
     len: usize,
     v: Vec<__m256i>
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 impl Jewel for AvxNx32x8 {
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn repeating(val: u32, len: usize) -> AvxNx32x8 {
         let v = vec![_mm256_set1_epi8(val as i8); (len >> 5) + if (len & 31) > 0 {1} else {0}];
 
@@ -52,10 +58,12 @@ impl Jewel for AvxNx32x8 {
         }
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn loadu(ptr: *const u8, len: usize) -> AvxNx32x8 {
         let word_len = len >> 5;
         let word_rem = len & 31;
-        let v = Vec::with_capacity(word_len + if word_rem > 0 {1} else {0});
+        let mut v = Vec::with_capacity(word_len + if word_rem > 0 {1} else {0});
         let avx2_ptr = ptr as *const __m256i;
 
         for i in 0..word_len {
@@ -64,10 +72,10 @@ impl Jewel for AvxNx32x8 {
 
         if word_rem > 0 {
             let mut arr = [0u8; 32];
-            let end_ptr = ptr.offset(word_len << 5);
+            let end_ptr = ptr.offset((word_len << 5) as isize);
 
             for i in 0..word_rem {
-                *arr.get_unchecked_mut(i) = *end_ptr.offset(i);
+                *arr.get_unchecked_mut(i) = *end_ptr.offset(i as isize);
             }
 
             *v.get_unchecked_mut(word_len) = _mm256_loadu_si256(arr.as_ptr() as *const __m256i);
@@ -79,6 +87,8 @@ impl Jewel for AvxNx32x8 {
         }
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn slow_loadu(&mut self, idx: usize, ptr: *const u8, len: usize, reverse: bool) {
         if len == 0 {
             return;
@@ -103,6 +113,8 @@ impl Jewel for AvxNx32x8 {
         }
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn fast_loadu(&mut self, ptr: *const u8) {
         let avx2_ptr = ptr as *const __m256i;
 
@@ -111,117 +123,72 @@ impl Jewel for AvxNx32x8 {
         }
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn add(&mut self, o: AvxNx32x8) {
         for i in 0..self.v.len() {
             *self.v.get_unchecked_mut(i) = _mm256_add_epi8(*self.v.get_unchecked(i), *o.v.get_unchecked(i));
         }
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn adds(&mut self, o: AvxNx32x8) {
         for i in 0..self.v.len() {
             *self.v.get_unchecked_mut(i) = _mm256_adds_epi8(*self.v.get_unchecked(i), *o.v.get_unchecked(i));
         }
     }
 
-    unsafe fn subs(&mut self, o: AvxNx32x8) {
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn sub(&mut self, o: AvxNx32x8) {
         for i in 0..self.v.len() {
-            *self.v.get_unchecked_mut(i) = _mm256_subs_epi8(*self.v.get_unchecked(i), *o.v.get_unchecked(i));
+            *self.v.get_unchecked_mut(i) = _mm256_sub_epi8(*self.v.get_unchecked(i), *o.v.get_unchecked(i));
         }
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn min(&mut self, o: AvxNx32x8) {
         for i in 0..self.v.len() {
             *self.v.get_unchecked_mut(i) = _mm256_min_epi8(*self.v.get_unchecked(i), *o.v.get_unchecked(i));
         }
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn and(&mut self, o: AvxNx32x8) {
         for i in 0..self.v.len() {
             *self.v.get_unchecked_mut(i) = _mm256_and_si256(*self.v.get_unchecked(i), *o.v.get_unchecked(i));
         }
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn cmpeq(&mut self, o: AvxNx32x8) {
         for i in 0..self.v.len() {
             *self.v.get_unchecked_mut(i) = _mm256_cmpeq_epi8(*self.v.get_unchecked(i), *o.v.get_unchecked(i));
         }
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn cmpgt(&mut self, o: AvxNx32x8) {
         for i in 0..self.v.len() {
             *self.v.get_unchecked_mut(i) = _mm256_cmpgt_epi8(*self.v.get_unchecked(i), *o.v.get_unchecked(i));
         }
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn blendv(&mut self, o: AvxNx32x8, mask: AvxNx32x8) {
         for i in 0..self.v.len() {
             *self.v.get_unchecked_mut(i) = _mm256_blendv_epi8(*self.v.get_unchecked(i), *o.v.get_unchecked(i), *mask.v.get_unchecked(i));
         }
     }
 
-    unsafe fn mm_count_mismatches(&self, o: AvxNx32x8, len: usize) -> u32 {
-        let mut res = 0u32;
-        let div_len = len >> 5;
-
-        for i in 0..div_len {
-            let eq = _mm256_cmpeq_epi8(*self.v.get_unchecked(i), *o.v.get_unchecked(i));
-            res += _mm256_movemask_epi8(eq).count_ones();
-        }
-
-        let rem_len = len & 31;
-
-        if rem_len > 0 {
-            let eq = _mm256_cmpeq_epi8(*self.v.get_unchecked(div_len), *o.v.get_unchecked(div_len));
-            res += (_mm256_movemask_epi8(eq) & ((1 << rem_len) - 1)).count_ones();
-        }
-
-        len as u32 - res
-    }
-
-    unsafe fn count_mismatches(&self, o: AvxNx32x8, len: usize) -> u32 {
-        let refresh_len = len / (255 * 32);
-        let zeros = _mm256_setzero_si256();
-        let mut sad = zeros;
-
-        for i in 0..refresh_len {
-            let mut curr = zeros;
-
-            for j in (i * 255)..((i + 1) * 255) {
-                let eq = _mm256_cmpeq_epi8(*self.v.get_unchecked(j), *o.v.get_unchecked(j));
-                curr = _mm256_subs_epu8(curr, eq); // subtract -1 = add 1 when matching
-                // counting matches instead of mismatches for speed
-            }
-
-            // subtract 0 and sum up 8 bytes at once horizontally into four 64 bit ints
-            // accumulate those 64 bit ints
-            sad = _mm256_add_epi64(sad, _mm256_sad_epu8(curr, zeros));
-        }
-
-        let word_len = len >> 5;
-        let mut curr = zeros;
-
-        // leftover blocks of 32 bytes
-        for i in (refresh_len * 255)..word_len {
-            let eq = _mm256_cmpeq_epi8(*self.v.get_unchecked(i), *o.v.get_unchecked(i));
-            curr = _mm256_subs_epu8(curr, eq); // subtract -1 = add 1 when matching
-        }
-
-        sad = _mm256_add_epi64(sad, _mm256_sad_epu8(curr, zeros));
-        let mut sad_arr = [0u32; 8];
-        _mm256_storeu_si256(sad_arr.as_mut_ptr() as *mut __m256i, sad);
-        let mut res = *sad_arr.get_unchecked(0) + *sad_arr.get_unchecked(2)
-            + *sad_arr.get_unchecked(4) + *sad_arr.get_unchecked(6);
-
-        let word_rem = len & 31;
-
-        if word_rem > 0 {
-            let eq = _mm256_cmpeq_epi8(*self.v.get_unchecked(word_len), *o.v.get_unchecked(word_len));
-            res += (_mm256_movemask_epi8(eq) & ((1 << word_rem) - 1)).count_ones();
-        }
-
-        len as u32 - res
-    }
-
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn shift_left_1(&mut self) {
         for i in 0..(self.v.len() - 1) {
             let curr = self.v.get_unchecked(i);
@@ -237,6 +204,8 @@ impl Jewel for AvxNx32x8 {
         *self.v.get_unchecked_mut(last) = _mm256_alignr_epi8(_mm256_permute2x128_si256(*curr, *curr, 0b10000001i32), *curr, 1i32);
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn shift_right_1(&mut self) {
         for i in (1..self.v.len()).rev() {
             let curr = self.v.get_unchecked(i);
@@ -251,6 +220,8 @@ impl Jewel for AvxNx32x8 {
         *self.v.get_unchecked_mut(0) = _mm256_alignr_epi8(*curr, _mm256_permute2x128_si256(*curr, *curr, 0b00001000i32), 15i32);
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn extract(&self, i: usize) -> u32 {
         let idx = i >> 5;
         let j = i & 31;
@@ -259,38 +230,123 @@ impl Jewel for AvxNx32x8 {
         *arr.get_unchecked(j) as u32
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn insert_last_0(&mut self, val: u32) {
         let last = self.v.len() - 1;
         *self.v.get_unchecked_mut(last) = _mm256_insert_epi8(*self.v.get_unchecked(last), val as i8, 31i32);
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn insert_last_1(&mut self, val: u32) {
         let last = self.v.len() - 1;
         *self.v.get_unchecked_mut(last) = _mm256_insert_epi8(*self.v.get_unchecked(last), val as i8, 30i32);
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn insert_last_2(&mut self, val: u32) {
         let last = self.v.len() - 1;
         *self.v.get_unchecked_mut(last) = _mm256_insert_epi8(*self.v.get_unchecked(last), val as i8, 29i32);
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn insert_last_max(&mut self) {
         let last = self.v.len() - 1;
         *self.v.get_unchecked_mut(last) = _mm256_insert_epi8(*self.v.get_unchecked(last), i8::max_value(), 31i32);
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn insert_first(&mut self, val: u32) {
         *self.v.get_unchecked_mut(0) = _mm256_insert_epi8(*self.v.get_unchecked(0), val as i8, 0i32);
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn insert_first_max(&mut self) {
         *self.v.get_unchecked_mut(0) = _mm256_insert_epi8(*self.v.get_unchecked(0), i8::max_value(), 0i32);
     }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn mm_count_mismatches(a_ptr: *const u8, b_ptr: *const u8, len: usize) -> u32 {
+        let mut res = 0u32;
+        let div_len = (len >> 5) as isize;
+        let avx2_a_ptr = a_ptr as *const __m256i;
+        let avx2_b_ptr = b_ptr as *const __m256i;
+
+        for i in 0..div_len {
+            let a = _mm256_loadu_si256(avx2_a_ptr.offset(i));
+            let b = _mm256_loadu_si256(avx2_b_ptr.offset(i));
+            let eq = _mm256_cmpeq_epi8(a, b);
+            res += _mm256_movemask_epi8(eq).count_ones();
+        }
+
+        for i in (div_len << 5)..len as isize {
+            res += (*a_ptr.offset(i) == *b_ptr.offset(i)) as u32;
+        }
+
+        len as u32 - res
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn count_mismatches(a_ptr: *const u8, b_ptr: *const u8, len: usize) -> u32 {
+        let refresh_len = (len / (255 * 32)) as isize;
+        let zeros = _mm256_setzero_si256();
+        let mut sad = zeros;
+        let avx2_a_ptr = a_ptr as *const __m256i;
+        let avx2_b_ptr = b_ptr as *const __m256i;
+
+        for i in 0..refresh_len {
+            let mut curr = zeros;
+
+            for j in (i * 255)..((i + 1) * 255) {
+                let a = _mm256_loadu_si256(avx2_a_ptr.offset(j));
+                let b = _mm256_loadu_si256(avx2_b_ptr.offset(j));
+                let eq = _mm256_cmpeq_epi8(a, b);
+                curr = _mm256_sub_epi8(curr, eq); // subtract -1 = add 1 when matching
+                // counting matches instead of mismatches for speed
+            }
+
+            // subtract 0 and sum up 8 bytes at once horizontally into four 64 bit ints
+            // accumulate those 64 bit ints
+            sad = _mm256_add_epi64(sad, _mm256_sad_epu8(curr, zeros));
+        }
+
+        let word_len = (len >> 5) as isize;
+        let mut curr = zeros;
+
+        // leftover blocks of 32 bytes
+        for i in (refresh_len * 255)..word_len {
+            let a = _mm256_loadu_si256(avx2_a_ptr.offset(i));
+            let b = _mm256_loadu_si256(avx2_b_ptr.offset(i));
+            let eq = _mm256_cmpeq_epi8(a, b);
+            curr = _mm256_sub_epi8(curr, eq); // subtract -1 = add 1 when matching
+        }
+
+        sad = _mm256_add_epi64(sad, _mm256_sad_epu8(curr, zeros));
+        let mut sad_arr = [0u32; 8];
+        _mm256_storeu_si256(sad_arr.as_mut_ptr() as *mut __m256i, sad);
+        let mut res = *sad_arr.get_unchecked(0) + *sad_arr.get_unchecked(2)
+            + *sad_arr.get_unchecked(4) + *sad_arr.get_unchecked(6);
+
+        for i in (word_len << 5)..len as isize {
+            res += (*a_ptr.offset(i) == *b_ptr.offset(i)) as u32;
+        }
+
+        len as u32 - res
+    }
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 impl fmt::Display for AvxNx32x8 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         unsafe {
+            #![target_feature(enable = "avx2")]
             write!(f, "[")?;
 
             let mut arr = [0u8; 32];

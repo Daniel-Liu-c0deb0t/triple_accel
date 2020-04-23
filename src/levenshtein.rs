@@ -780,7 +780,7 @@ unsafe fn triple_argmin_x86_avx2(sub: __m256i, a_gap: __m256i, b_gap: __m256i, o
     // hide latency by minimizing dependencies
     let res_min = _mm256_min_epi8(a_gap, b_gap);
     let a_gap_mask = _mm256_cmpgt_epi8(a_gap, b_gap);
-    let res_arg = _mm256_subs_epi8(ones, a_gap_mask); // a gap: 1 - 0 = 1, b gap: 1 - -1 = 2
+    let res_arg = _mm256_sub_epi8(ones, a_gap_mask); // a gap: 1 - 0 = 1, b gap: 1 - -1 = 2
 
     let res_min2 = _mm256_min_epi8(sub, res_min);
     let sub_mask = _mm256_cmpgt_epi8(sub, res_min);
