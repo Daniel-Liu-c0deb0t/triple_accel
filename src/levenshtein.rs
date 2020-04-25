@@ -230,7 +230,7 @@ pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, O
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {levenshtein_simd_x86_avx2(a, b, k, trace_on)};
+            return unsafe {levenshtein_simd_x86_avx2::<AvxNx32x8>(a, b, k, trace_on)};
         }
     }
 
@@ -239,7 +239,7 @@ pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, O
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
-unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], b_old: &[u8], k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+unsafe fn levenshtein_simd_x86_avx2<T: Jewel + Clone>(a_old: &[u8], b_old: &[u8], k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
     // swap a and b so that a is shorter than b, if applicable
     // makes operations later on slightly easier, since length of a <= length of b
     let swap = a_old.len() > b_old.len();
@@ -248,81 +248,50 @@ unsafe fn levenshtein_simd_x86_avx2(a_old: &[u8], b_old: &[u8], k: u32, trace_on
     let b = if swap {a_old} else {b_old};
     let b_len = b.len();
 
-    // lengths of the (anti) diagonals
-    // constant length for simplicity because similar speeds even if this is shorter
-    let k1 = 31usize;
-    let k1_div2 = k1 >> 1;
-    let k2 = 30usize;
-    let k2_div2 = k2 >> 1;
-
     if b_len - a_len > k as usize {
         return ((b_len - a_len) as u32, None);
     }
 
     // initialized with max value of i8
     // must use saturated additions afterwards to not overflow
-    let mut dp1 = _mm256_set1_epi8(127i8);
-    let mut dp2 = _mm256_set1_epi8(127i8);
+    let mut dp1 = T::repeating_max((k + 2) as usize);
+    let mut dp2 = T::repeating_max((k + 1) as usize);
+
+    // lengths of the (anti) diagonals
+    // assumes upper_bound is even
+    let k1 = dp1.upper_bound() - 1;
+    let k1_div2 = k1 >> 1;
+    let k2 = dp1.upper_bound() - 2;
+    let k2_div2 = k2 >> 1;
+
     // set dp[0][0] = 0
-    dp1 = _mm256_insert_epi8(dp1, 0i8, 15i32); // k1 / 2
+    dp1.insert(k1_div2, 0);
     // set dp[0][1] = 1 and dp[1][0] = 1
-    dp2 = _mm256_insert_epi8(dp2, 1i8, 14i32); // k2 / 2 - 1
-    dp2 = _mm256_insert_epi8(dp2, 1i8, 15i32); // k2 / 2
+    dp2.insert(k2_div2 - 1, 1);
+    dp2.insert(k2_div2, 1);
 
     // a_k1_window and a_k2_window represent reversed portions of the string a
     // copy in half of k1/k2 number of characters
     // these characters are placed in the second half of b windows
     // since a windows are reversed, the characters are placed in reverse in the first half of b windows
-    let mut a_k1_window = {
-        let mut a_k1_window_arr = [0u8; 32];
+    let mut a_k1_window = T::repeating(0, dp1.upper_bound());
+    a_k1_window.slow_loadu(k1_div2 - 1, a.as_ptr(), std::cmp::min(k1_div2, a_len), true);
 
-        for i in 0..std::cmp::min(k1_div2, a_len) {
-            *a_k1_window_arr.get_unchecked_mut(k1_div2 - 1 - i) = *a.get_unchecked(i);
-        }
+    let mut b_k1_window = T::repeating(0, dp1.upper_bound());
+    b_k1_window.slow_loadu(k1_div2 + 1, b.as_ptr(), std::cmp::min(k1_div2, b_len), false);
 
-        // unaligned, so must use loadu
-        _mm256_loadu_si256(a_k1_window_arr.as_ptr() as *const __m256i)
-    };
+    let mut a_k2_window = T::repeating(0, dp1.upper_bound());
+    a_k2_window.slow_loadu(k2_div2 - 1, a.as_ptr(), std::cmp::min(k2_div2, a_len), true);
 
-    let mut b_k1_window = {
-        let mut b_k1_window_arr = [0u8; 32];
-
-        for i in 0..std::cmp::min(k1_div2, b_len) {
-            *b_k1_window_arr.get_unchecked_mut(k1_div2 + 1 + i) = *b.get_unchecked(i);
-        }
-
-        _mm256_loadu_si256(b_k1_window_arr.as_ptr() as *const __m256i)
-    };
-
-    let mut a_k2_window = {
-        let mut a_k2_window_arr = [0u8; 32];
-
-        for i in 0..std::cmp::min(k2_div2, a_len) {
-            *a_k2_window_arr.get_unchecked_mut(k2_div2 - 1 - i) = *a.get_unchecked(i);
-        }
-
-        _mm256_loadu_si256(a_k2_window_arr.as_ptr() as *const __m256i)
-    };
-
-    let mut b_k2_window = {
-        let mut b_k2_window_arr = [0u8; 32];
-
-        for i in 0..std::cmp::min(k2_div2, b_len) {
-            *b_k2_window_arr.get_unchecked_mut(k2_div2 + i) = *b.get_unchecked(i);
-        }
-
-        _mm256_loadu_si256(b_k2_window_arr.as_ptr() as *const __m256i)
-    };
+    let mut b_k2_window = T::repeating(0, dp1.upper_bound());
+    b_k2_window.slow_loadu(k2_div2, b.as_ptr(), std::cmp::min(k2_div2, b_len), false);
 
     // used to keep track of the next characters to place in the windows
     let mut k1_idx = k1_div2 - 1;
     let mut k2_idx = k2_div2 - 1;
 
     // reusable constants
-    let ones = _mm256_set1_epi8(1i8);
-    // reversed bytes for setting highest/lowest byte to max value
-    let end_max = _mm256_set_epi8(127i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8);
-    let start_max = _mm256_set_epi8(0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 0i8, 127i8);
+    let ones = T::repeating(1, dp1.upper_bound());
 
     let len_diff = b_len - a_len;
     let len = a_len + b_len + 1;

@@ -32,6 +32,7 @@ pub trait Jewel {
     unsafe fn shift_left_1(&mut self);
     unsafe fn shift_right_1(&mut self);
     unsafe fn extract(&self, i: usize) -> u32;
+    unsafe fn insert(&mut self, i: usize, val: u32);
     /// last_0 is the last element, last_1 is the second to last, etc.
     unsafe fn insert_last_0(&mut self, val: u32);
     unsafe fn insert_last_1(&mut self, val: u32);
@@ -86,12 +87,6 @@ impl Jewel for AvxNx32x8 {
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn upper_bound(&self) -> usize {
-        self.v.len() << 5
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
     unsafe fn loadu(ptr: *const u8, len: usize) -> AvxNx32x8 {
         let word_len = len >> 5;
         let word_rem = len & 31;
@@ -117,6 +112,12 @@ impl Jewel for AvxNx32x8 {
             v: v,
             len: len
         }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn upper_bound(&self) -> usize {
+        self.v.len() << 5
     }
 
     #[target_feature(enable = "avx2")]
@@ -181,69 +182,9 @@ impl Jewel for AvxNx32x8 {
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn min(a: &AvxNx32x8, b: &AvxNx32x8) -> AvxNx32x8 {
-        let mut v = Vec::with_capacity(a.v.len());
-
-        for i in 0..a.v.len() {
-            v.push(_mm256_min_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i)));
-        }
-
-        AvxNx32x8{
-            len: a.len,
-            v: v
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn max(a: &AvxNx32x8, b: &AvxNx32x8) -> AvxNx32x8 {
-        let mut v = Vec::with_capacity(a.v.len());
-
-        for i in 0..a.v.len() {
-            v.push(_mm256_max_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i)));
-        }
-
-        AvxNx32x8{
-            len: a.len,
-            v: v
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
     unsafe fn and(&mut self, o: &AvxNx32x8) {
         for i in 0..self.v.len() {
             *self.v.get_unchecked_mut(i) = _mm256_and_si256(*self.v.get_unchecked(i), *o.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn cmpeq(a: &AvxNx32x8, b: &AvxNx32x8) -> AvxNx32x8 {
-        let mut v = Vec::with_capacity(a.v.len());
-
-        for i in 0..a.v.len() {
-            v.push(_mm256_cmpeq_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i)));
-        }
-
-        AvxNx32x8{
-            len: a.len,
-            v: v
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn cmpgt(a: &AvxNx32x8, b: &AvxNx32x8) -> AvxNx32x8 {
-        let mut v = Vec::with_capacity(a.v.len());
-
-        for i in 0..a.v.len() {
-            v.push(_mm256_cmpgt_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i)));
-        }
-
-        AvxNx32x8{
-            len: a.len,
-            v: v
         }
     }
 
@@ -296,6 +237,18 @@ impl Jewel for AvxNx32x8 {
         let mut arr = [0u8; 32];
         _mm256_storeu_si256(arr.as_mut_ptr() as *mut __m256i, *self.v.get_unchecked(idx));
         *arr.get_unchecked(j) as u32
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn insert(&self, i: usize, val: u32) {
+        let idx = i >> 5;
+        let j = i & 31;
+        let mut arr = [0u8; 32];
+        let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
+        _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(idx));
+        *arr.get_unchecked_mut(j) = val as u8;
+        *self.v.get_unchecked_mut(idx) = _mm256_loadu_si256(arr_ptr);
     }
 
     #[target_feature(enable = "avx2")]
@@ -407,6 +360,66 @@ impl Jewel for AvxNx32x8 {
         }
 
         len as u32 - res
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn cmpeq(a: &AvxNx32x8, b: &AvxNx32x8) -> AvxNx32x8 {
+        let mut v = Vec::with_capacity(a.v.len());
+
+        for i in 0..a.v.len() {
+            v.push(_mm256_cmpeq_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i)));
+        }
+
+        AvxNx32x8{
+            len: a.len,
+            v: v
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn cmpgt(a: &AvxNx32x8, b: &AvxNx32x8) -> AvxNx32x8 {
+        let mut v = Vec::with_capacity(a.v.len());
+
+        for i in 0..a.v.len() {
+            v.push(_mm256_cmpgt_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i)));
+        }
+
+        AvxNx32x8{
+            len: a.len,
+            v: v
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn min(a: &AvxNx32x8, b: &AvxNx32x8) -> AvxNx32x8 {
+        let mut v = Vec::with_capacity(a.v.len());
+
+        for i in 0..a.v.len() {
+            v.push(_mm256_min_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i)));
+        }
+
+        AvxNx32x8{
+            len: a.len,
+            v: v
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn max(a: &AvxNx32x8, b: &AvxNx32x8) -> AvxNx32x8 {
+        let mut v = Vec::with_capacity(a.v.len());
+
+        for i in 0..a.v.len() {
+            v.push(_mm256_max_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i)));
+        }
+
+        AvxNx32x8{
+            len: a.len,
+            v: v
+        }
     }
 }
 
