@@ -45,6 +45,7 @@ pub trait Jewel {
     /// For speed, the `count_mismatches` functions do not require creating a Jewel vector.
     unsafe fn mm_count_mismatches(a_ptr: *const u8, b_ptr: *const u8, len: usize) -> u32;
     unsafe fn count_mismatches(a_ptr: *const u8, b_ptr: *const u8, len: usize) -> u32;
+    unsafe fn vector_count_mismatches(a: &Self, b_ptr: *const u8) -> u32;
 
     /// These operations commonly require cloning anyways,
     /// so why not fuse the clone with the operation?
@@ -96,7 +97,7 @@ impl Jewel for AvxNx32x8 {
         let avx2_ptr = ptr as *const __m256i;
 
         for i in 0..word_len {
-            *v.get_unchecked_mut(i) = _mm256_loadu_si256(avx2_ptr.offset(i as isize));
+            v.push(_mm256_loadu_si256(avx2_ptr.offset(i as isize)));
         }
 
         if word_rem > 0 {
@@ -107,7 +108,7 @@ impl Jewel for AvxNx32x8 {
                 *arr.get_unchecked_mut(i) = *end_ptr.offset(i as isize);
             }
 
-            *v.get_unchecked_mut(word_len) = _mm256_loadu_si256(arr.as_ptr() as *const __m256i);
+            v.push(_mm256_loadu_si256(arr.as_ptr() as *const __m256i));
         }
 
         AvxNx32x8{
@@ -366,6 +367,49 @@ impl Jewel for AvxNx32x8 {
 
     #[target_feature(enable = "avx2")]
     #[inline]
+    unsafe fn vector_count_mismatches(a: &AvxNx32x8, b_ptr: *const u8) -> u32 {
+        let refresh_len = (a.v.len() / 255) as isize;
+        let zeros = _mm256_setzero_si256();
+        let mut sad = zeros;
+        let avx2_b_ptr = b_ptr as *const __m256i;
+
+        for i in 0..refresh_len {
+            let mut curr = zeros;
+
+            for j in (i * 255)..((i + 1) * 255) {
+                let a = *a.v.get_unchecked(j as usize);
+                let b = _mm256_loadu_si256(avx2_b_ptr.offset(j));
+                let eq = _mm256_cmpeq_epi8(a, b);
+                curr = _mm256_sub_epi8(curr, eq); // subtract -1 = add 1 when matching
+                // counting matches instead of mismatches for speed
+            }
+
+            // subtract 0 and sum up 8 bytes at once horizontally into four 64 bit ints
+            // accumulate those 64 bit ints
+            sad = _mm256_add_epi64(sad, _mm256_sad_epu8(curr, zeros));
+        }
+
+        let mut curr = zeros;
+
+        // leftover blocks of 32 bytes
+        for i in (refresh_len * 255)..a.v.len() as isize {
+            let a = *a.v.get_unchecked(i as usize);
+            let b = _mm256_loadu_si256(avx2_b_ptr.offset(i));
+            let eq = _mm256_cmpeq_epi8(a, b);
+            curr = _mm256_sub_epi8(curr, eq); // subtract -1 = add 1 when matching
+        }
+
+        sad = _mm256_add_epi64(sad, _mm256_sad_epu8(curr, zeros));
+        let mut sad_arr = [0u32; 8];
+        _mm256_storeu_si256(sad_arr.as_mut_ptr() as *mut __m256i, sad);
+        let res = *sad_arr.get_unchecked(0) + *sad_arr.get_unchecked(2)
+            + *sad_arr.get_unchecked(4) + *sad_arr.get_unchecked(6);
+
+        (a.v.len() << 5) as u32 - res
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn cmpeq(a: &AvxNx32x8, b: &AvxNx32x8) -> AvxNx32x8 {
         let mut v = Vec::with_capacity(a.v.len());
 
@@ -426,11 +470,12 @@ impl Jewel for AvxNx32x8 {
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn triple_min_length(sub: &AvxNx32x8, a_gap: &AvxNx32x8, b_gap: &AvxNx32x8, sub_length: &AvxNx32x8, a_gap_length: &AvxNx32x8, b_gap_length: &AvxNx32x8, res1: &mut AvxNx32x8, res2: &mut AvxNx32x8) {
+    unsafe fn triple_min_length(sub: &AvxNx32x8, a_gap: &AvxNx32x8,
+                                b_gap: &AvxNx32x8, sub_length: &AvxNx32x8, a_gap_length: &AvxNx32x8,
+                                b_gap_length: &AvxNx32x8, res_min: &mut AvxNx32x8, res_length: &mut AvxNx32x8) {
         // choose the length based on which edit is chosen during the min operation
         // hide latency by minimizing dependencies
         // secondary objective of maximizing length if edit costs equal
-
         for i in 0..sub.v.len() {
             let sub = *sub.v.get_unchecked(i);
             let a_gap = *a_gap.v.get_unchecked(i);
@@ -439,24 +484,22 @@ impl Jewel for AvxNx32x8 {
             let a_gap_length = *a_gap_length.v.get_unchecked(i);
             let b_gap_length = *b_gap_length.v.get_unchecked(i);
 
-            let res_min = _mm256_min_epi8(a_gap, b_gap);
-            let mut res_length = _mm256_cmpgt_epi8(a_gap, b_gap); // a gap: 0, b gap: -1
-            res_length = _mm256_blendv_epi8(a_gap_length, b_gap_length, res_length); // lengths based on edits
-            let mut a_b_eq_mask = _mm256_cmpeq_epi8(a_gap, b_gap); // equal: -1
+            let res_min1 = _mm256_min_epi8(a_gap, b_gap);
+            let a_b_gt_mask = _mm256_cmpgt_epi8(a_gap, b_gap); // a gap: 0, b gap: -1
+            let mut res_length1 = _mm256_blendv_epi8(a_gap_length, b_gap_length, a_b_gt_mask); // lengths based on edits
+            let a_b_eq_mask = _mm256_cmpeq_epi8(a_gap, b_gap); // equal: -1
             let a_b_max_len = _mm256_max_epi8(a_gap_length, b_gap_length);
-            a_b_eq_mask = _mm256_blendv_epi8(res_length, a_b_max_len, a_b_eq_mask); // maximize length if edits equal
-            res_length = a_b_eq_mask;
+            res_length1 = _mm256_blendv_epi8(res_length1, a_b_max_len, a_b_eq_mask); // maximize length if edits equal
 
-            let res_min2 = _mm256_min_epi8(sub, res_min);
-            let mut res_length2 = _mm256_cmpgt_epi8(sub, res_min); // sub: 0, prev a or b gap: -1
-            res_length2 = _mm256_blendv_epi8(sub_length, res_length, res_length2); // length based on edits
-            let mut sub_eq_mask = _mm256_cmpeq_epi8(sub, res_min);
-            let sub_max_len = _mm256_max_epi8(sub_length, res_length);
-            sub_eq_mask = _mm256_blendv_epi8(res_length2, sub_max_len, sub_eq_mask);
-            res_length2 = sub_eq_mask;
+            let res_min2 = _mm256_min_epi8(sub, res_min1);
+            let sub_gt_mask = _mm256_cmpgt_epi8(sub, res_min1); // sub: 0, prev a or b gap: -1
+            let mut res_length2 = _mm256_blendv_epi8(sub_length, res_length1, sub_gt_mask); // length based on edits
+            let sub_eq_mask = _mm256_cmpeq_epi8(sub, res_min1);
+            let sub_max_len = _mm256_max_epi8(sub_length, res_length1);
+            res_length2 = _mm256_blendv_epi8(res_length2, sub_max_len, sub_eq_mask); // maximize length if edits equal
 
-            *res1.v.get_unchecked_mut(i) = res_min2;
-            *res2.v.get_unchecked_mut(i) = res_length2;
+            *res_min.v.get_unchecked_mut(i) = res_min2;
+            *res_length.v.get_unchecked_mut(i) = res_length2;
         }
     }
 }

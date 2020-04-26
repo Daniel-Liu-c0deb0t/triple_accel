@@ -425,15 +425,16 @@ pub fn hamming_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: bool)
 
 unsafe fn hamming_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
     let needle_len = needle.len();
-    let len = haystack.len() + 1 - needle_len;
+    let haystack_len = haystack.len();
+    let needle_vector = T::loadu(needle.as_ptr(), needle_len);
+    let len = if needle_vector.upper_bound() > haystack_len {0} else {haystack_len + 1 - needle_vector.upper_bound()};
+    let real_len = haystack_len + 1 - needle_len;
     let mut res = Vec::with_capacity(len >> 2);
-    let needle_ptr = needle.as_ptr();
     let haystack_ptr = haystack.as_ptr();
     let mut curr_k = k;
 
-    // do blocks of 32 bytes at once
     for i in 0..len {
-        let final_res = T::count_mismatches(needle_ptr, haystack_ptr.offset(i as isize), needle_len);
+        let final_res = T::vector_count_mismatches(&needle_vector, haystack_ptr.offset(i as isize));
 
         if final_res <= curr_k {
             res.push(Match{start: i, end: i + needle_len, k: final_res});
@@ -441,6 +442,24 @@ unsafe fn hamming_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: 
             if best {
                 curr_k = final_res;
             }
+        }
+    }
+
+    'outer: for i in len..real_len {
+        let mut final_res = 0u32;
+
+        for j in 0..needle_len {
+            final_res += (*needle.get_unchecked(j) != *haystack.get_unchecked(i + j)) as u32;
+
+            if final_res > curr_k {
+                continue 'outer;
+            }
+        }
+
+        res.push(Match{start: i, end: i + needle_len, k: final_res});
+
+        if best {
+            curr_k = final_res;
         }
     }
 
