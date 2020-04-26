@@ -2,12 +2,6 @@ use std;
 use super::*;
 use super::jewel::*;
 
-#[cfg(target_arch = "x86")]
-use core::arch::x86::*;
-
-#[cfg(target_arch = "x86_64")]
-use core::arch::x86_64::*;
-
 pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec<Edit>>) {
     let swap = a.len() > b.len(); // swap so that a len <= b len
     let a_new = if swap {b} else {a};
@@ -230,16 +224,14 @@ pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, O
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {levenshtein_simd_x86_avx2::<AvxNx32x8>(a, b, k, trace_on)};
+            return unsafe {levenshtein_simd_core::<AvxNx32x8>(a, b, k, trace_on)};
         }
     }
 
     levenshtein_naive_k(a, b, k, trace_on)
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-unsafe fn levenshtein_simd_x86_avx2<T: Jewel + Clone>(a_old: &[u8], b_old: &[u8], k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+unsafe fn levenshtein_simd_core<T: Jewel + Clone>(a_old: &[u8], b_old: &[u8], k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
     // swap a and b so that a is shorter than b, if applicable
     // makes operations later on slightly easier, since length of a <= length of b
     let swap = a_old.len() > b_old.len();
@@ -255,7 +247,7 @@ unsafe fn levenshtein_simd_x86_avx2<T: Jewel + Clone>(a_old: &[u8], b_old: &[u8]
     // initialized with max value of i8
     // must use saturated additions afterwards to not overflow
     let mut dp1 = T::repeating_max((k + 2) as usize);
-    let mut dp2 = T::repeating_max((k + 1) as usize);
+    let mut dp2 = T::repeating_max(dp1.upper_bound());
 
     // lengths of the (anti) diagonals
     // assumes upper_bound is even
@@ -307,11 +299,13 @@ unsafe fn levenshtein_simd_x86_avx2<T: Jewel + Clone>(a_old: &[u8], b_old: &[u8]
     };
 
     // 0 = match/mismatch, 1 = a gap, 2 = b gap
-    let mut traceback_arr = if trace_on {vec![0u8; (len + (len & 1)) * 32]} else {vec![]};
+    let mut traceback_arr = if trace_on {Vec::with_capacity(len + (len & 1))} else {vec![]};
 
     if trace_on {
-        *traceback_arr.get_unchecked_mut(1 * 32 + (k2_div2 - 1)) = 2u8;
-        *traceback_arr.get_unchecked_mut(1 * 32 + k2_div2) = 1u8;
+        traceback_arr.push(T::repeating(0, dp1.upper_bound()));
+        traceback_arr.push(T::repeating(0, dp2.upper_bound()));
+        traceback_arr.get_unchecked_mut(1).insert(k2_div2 - 1, 2);
+        traceback_arr.get_unchecked_mut(1).insert(k2_div2, 1);
     }
 
     // example: allow k = 2 edits for two strings of length 3
@@ -359,90 +353,86 @@ unsafe fn levenshtein_simd_x86_avx2<T: Jewel + Clone>(a_old: &[u8], b_old: &[u8]
     // dp[i][j] -> dp[i + 1][j] is a gap in string b
     // dp[i][j] -> dp[i][j + 1] is a gap in string a
 
-    for i in 1..len_div2 {
+    for _ in 1..len_div2 {
         // move indexes in strings forward
         k1_idx += 1;
         k2_idx += 1;
 
         // move windows for the strings a and b
-        a_k1_window = shift_right_x86_avx2(a_k1_window);
+        a_k1_window.shift_right_1();
 
         if k1_idx < a_len {
-            a_k1_window = _mm256_insert_epi8(a_k1_window, *a.get_unchecked(k1_idx) as i8, 0i32);
+            a_k1_window.insert_first(*a.get_unchecked(k1_idx) as u32);
         }
 
-        b_k1_window = shift_left_x86_avx2(b_k1_window);
+        b_k1_window.shift_left_1();
 
         if k1_idx < b_len {
-            b_k1_window = _mm256_insert_epi8(b_k1_window, *b.get_unchecked(k1_idx) as i8, 30i32); // k1 - 1
+            b_k1_window.insert_last_1(*b.get_unchecked(k1_idx) as u32); // k1 - 1
         }
 
-        a_k2_window = shift_right_x86_avx2(a_k2_window);
+        a_k2_window.shift_right_1();
 
         if k2_idx < a_len {
-            a_k2_window = _mm256_insert_epi8(a_k2_window, *a.get_unchecked(k2_idx) as i8, 0i32);
+            a_k2_window.insert_first(*a.get_unchecked(k2_idx) as u32);
         }
 
-        b_k2_window = shift_left_x86_avx2(b_k2_window);
+        b_k2_window.shift_left_1();
 
         if k2_idx < b_len {
-            b_k2_window = _mm256_insert_epi8(b_k2_window, *b.get_unchecked(k2_idx) as i8, 29i32); // k2 - 1
+            b_k2_window.insert_last_2(*b.get_unchecked(k2_idx) as u32);
         }
 
         // (anti) diagonal that matches in the a and b windows
-        let match_mask_k1 = _mm256_cmpeq_epi8(a_k1_window, b_k1_window);
+        let mut sub_k1 = T::cmpeq(&a_k1_window, &b_k1_window);
         // add negative ones to cells that have matching characters from a and b
-        let sub_k1 = _mm256_adds_epi8(dp1, match_mask_k1);
+        sub_k1.adds(&dp1);
         // cost of gaps in a
-        let a_gap_k1 = {
-            let a_gap_prev = shift_right_x86_avx2(dp2);
-            _mm256_or_si256(a_gap_prev, start_max) // shift in max value
-        };
+        let mut a_gap_k1 = dp2.clone();
+        a_gap_k1.shift_right_1();
+        a_gap_k1.insert_first_max();
         // cost of gaps in b: dp2
 
-        dp1 = dp2;
-
         // min of the cost of all three edit operations
         if trace_on {
-            let min = triple_argmin_x86_avx2(sub_k1, a_gap_k1, dp2, ones);
-            dp2 = _mm256_adds_epi8(min.0, ones);
-            _mm256_storeu_si256(traceback_arr.as_mut_ptr().offset(((i << 1) * 32) as isize) as *mut __m256i, min.1);
+            let min = triple_argmin(&sub_k1, &a_gap_k1, &dp2, &ones);
+            dp1 = dp2;
+            dp2 = min.0;
+            dp2.adds(&ones);
+            traceback_arr.push(min.1);
         }else{
-            dp2 = _mm256_adds_epi8(_mm256_min_epi8(sub_k1, _mm256_min_epi8(a_gap_k1, dp2)), ones);
+            let temp = T::min(&sub_k1, &T::min(&a_gap_k1, &dp2));
+            dp1 = dp2;
+            dp2 = temp;
+            dp2.adds(&ones);
         }
 
         // (anti) diagonal that matches in the a and b windows
-        let match_mask_k2 = _mm256_cmpeq_epi8(a_k2_window, b_k2_window);
+        let mut sub_k2 = T::cmpeq(&a_k2_window, &b_k2_window);
         // add negative ones to cells that have matching characters from a and b
-        let sub_k2 = _mm256_adds_epi8(dp1, match_mask_k2);
+        sub_k2.adds(&dp1);
         // cost of gaps in b
-        let b_gap_k2 = {
-            let b_gap_prev = shift_left_x86_avx2(dp2);
-            _mm256_or_si256(b_gap_prev, end_max) // k1, shift in max value
-        };
+        let mut b_gap_k2 = dp2.clone();
+        b_gap_k2.shift_left_1();
+        b_gap_k2.insert_last_max(); // k1, shift in max value
         // cost of gaps in a: dp2
-
-        dp1 = dp2;
 
         // min of the cost of all three edit operations
         if trace_on {
-            let min = triple_argmin_x86_avx2(sub_k2, dp2, b_gap_k2, ones);
-            dp2 = _mm256_adds_epi8(min.0, ones);
-            _mm256_storeu_si256(traceback_arr.as_mut_ptr().offset((((i << 1) + 1) * 32) as isize) as *mut __m256i, min.1);
+            let min = triple_argmin(&sub_k2, &dp2, &b_gap_k2, &ones);
+            dp1 = dp2;
+            dp2 = min.0;
+            dp2.adds(&ones);
+            traceback_arr.push(min.1);
         }else{
-            dp2 = _mm256_adds_epi8(_mm256_min_epi8(sub_k2, _mm256_min_epi8(dp2, b_gap_k2)), ones);
+            let temp = T::min(&sub_k2, &T::min(&dp2, &b_gap_k2));
+            dp1 = dp2;
+            dp2 = temp;
+            dp2.adds(&ones);
         }
     }
 
-    let mut final_arr = [0u8; 32];
-
-    if ends_with_k2 {
-        _mm256_storeu_si256(final_arr.as_mut_ptr() as *mut __m256i, dp2);
-    }else{
-        _mm256_storeu_si256(final_arr.as_mut_ptr() as *mut __m256i, dp1);
-    }
-
-    let final_res = final_arr[final_idx] as u32;
+    let final_res = if ends_with_k2 {dp2.extract(final_idx)} else {dp1.extract(final_idx)};
 
     if !trace_on || final_res > k {
         return (final_res, None);
@@ -451,26 +441,27 @@ unsafe fn levenshtein_simd_x86_avx2<T: Jewel + Clone>(a_old: &[u8], b_old: &[u8]
     (final_res, Some(traceback(&traceback_arr, final_idx, a, b, swap, ends_with_k2)))
 }
 
-unsafe fn traceback(arr: &[u8], mut idx: usize, a: &[u8], b: &[u8], swap: bool, mut is_k2: bool) -> Vec<Edit> {
+unsafe fn traceback<T: Jewel>(arr: &[T], mut idx: usize, a: &[u8], b: &[u8], swap: bool, mut is_k2: bool) -> Vec<Edit> {
     // keep track of position in traditional dp array and strings
     let mut i = a.len(); // index in a
     let mut j = b.len(); // index in b
 
     // last diagonal may overshoot, so ignore it
-    let mut arr_idx = (arr.len() >> 5) - 1 - (if is_k2 {0} else {1});
+    let mut arr_idx = arr.len() - 1 - (if is_k2 {0} else {1});
     let mut res = Vec::with_capacity(a.len() + b.len());
 
     while arr_idx > 0 {
-        let edit = *arr.get_unchecked(arr_idx * 32 + idx);
+        // each Jewel vector in arr is only visited once, so extract (which is costly) is fine
+        let edit = arr.get_unchecked(arr_idx).extract(idx);
 
         match edit {
-            0u8 => { // match/mismatch
+            0 => { // match/mismatch
                 res.push(if *a.get_unchecked(i - 1) == *b.get_unchecked(j - 1) {Edit::Match} else {Edit::Mismatch});
                 arr_idx -= 2;
                 i -= 1;
                 j -= 1;
             },
-            1u8 => { // a gap
+            1 => { // a gap
                 res.push(if swap {Edit::BGap} else {Edit::AGap}); // account for the swap in the beginning
                 arr_idx -= 1;
 
@@ -481,7 +472,7 @@ unsafe fn traceback(arr: &[u8], mut idx: usize, a: &[u8], b: &[u8], swap: bool, 
                 j -= 1;
                 is_k2 = !is_k2; // must account for alternating k1/k2 diagonals
             },
-            2u8 => { // b gap
+            2 => { // b gap
                 res.push(if swap {Edit::AGap} else {Edit::BGap});
                 arr_idx -= 1;
 
@@ -607,7 +598,7 @@ pub fn levenshtein_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {levenshtein_search_simd_x86_avx2::<AvxNx32x8>(needle, haystack, needle.len() as u32, true)};
+            return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, needle.len() as u32, true)};
         }
     }
 
@@ -624,16 +615,14 @@ pub fn levenshtein_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: b
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {levenshtein_search_simd_x86_avx2::<AvxNx32x8>(needle, haystack, k, best)};
+            return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, k, best)};
         }
     }
 
     levenshtein_search_naive_k(needle, haystack, k, best)
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-unsafe fn levenshtein_search_simd_x86_avx2<T: Jewel + Clone>(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
+unsafe fn levenshtein_search_simd_core<T: Jewel + Clone>(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
     let mut dp1 = T::repeating_max(needle_len);
@@ -703,12 +692,14 @@ unsafe fn levenshtein_search_simd_x86_avx2<T: Jewel + Clone>(needle: &[u8], hays
         let mut haystack_gap_length = length2.clone();
         haystack_gap_length.shift_left_1();
 
-        let min = triple_min_length(&sub, &dp2, &haystack_gap, &sub_length, &needle_gap_length, &haystack_gap_length);
+        let mut min0 = dp2.clone();
+        let mut min1 = dp2.clone();
+        T::triple_min_length(&sub, &dp2, &haystack_gap, &sub_length, &needle_gap_length, &haystack_gap_length, &mut min0, &mut min1);
         dp1 = dp2;
         length1 = length2;
-        dp2 = min.0;
+        dp2 = min0;
         dp2.adds(&ones);
-        length2 = min.1;
+        length2 = min1;
 
         if i >= needle_len - 1 {
             let final_res = dp2.extract(final_idx);
@@ -732,26 +723,20 @@ unsafe fn levenshtein_search_simd_x86_avx2<T: Jewel + Clone>(needle: &[u8], hays
     res
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[inline]
-#[target_feature(enable = "avx2")]
-unsafe fn triple_argmin_x86_avx2(sub: __m256i, a_gap: __m256i, b_gap: __m256i, ones: __m256i) -> (__m256i, __m256i) {
+unsafe fn triple_argmin<T: Jewel>(sub: &T, a_gap: &T, b_gap: &T, ones: &T) -> (T, T) {
     // return the edit used in addition to doing a min operation
     // hide latency by minimizing dependencies
-    let res_min = _mm256_min_epi8(a_gap, b_gap);
-    let a_gap_mask = _mm256_cmpgt_epi8(a_gap, b_gap);
-    let res_arg = _mm256_sub_epi8(ones, a_gap_mask); // a gap: 1 - 0 = 1, b gap: 1 - -1 = 2
+    let res_min = T::min(a_gap, b_gap);
+    let mut res_arg = T::cmpgt(a_gap, b_gap);
+    res_arg.neg_add(&ones); // a gap: 1 - 0 = 1, b gap: 1 - -1 = 2
 
-    let res_min2 = _mm256_min_epi8(sub, res_min);
-    let sub_mask = _mm256_cmpgt_epi8(sub, res_min);
-    let res_arg2 = _mm256_and_si256(sub_mask, res_arg); // sub: 0
+    let res_min2 = T::min(sub, &res_min);
+    let mut res_arg2 = T::cmpgt(sub, &res_min);
+    res_arg2.and(&res_arg); // sub: 0
 
     (res_min2, res_arg2)
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[inline]
-#[target_feature(enable = "avx2")]
 unsafe fn triple_min_length<T: Jewel>(sub: &T, a_gap: &T, b_gap: &T, sub_length: &T, a_gap_length: &T, b_gap_length: &T) -> (T, T) {
     // choose the length based on which edit is chosen during the min operation
     // hide latency by minimizing dependencies

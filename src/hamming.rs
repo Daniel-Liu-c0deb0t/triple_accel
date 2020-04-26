@@ -285,16 +285,14 @@ pub fn hamming_simd_parallel(a: &[u8], b: &[u8]) -> u32 {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {hamming_simd_parallel_x86_avx2::<AvxNx32x8>(a, b)};
+            return unsafe {hamming_simd_parallel_core::<AvxNx32x8>(a, b)};
         }
     }
 
     hamming_naive(a, b)
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-unsafe fn hamming_simd_parallel_x86_avx2<T: Jewel>(a: &[u8], b: &[u8]) -> u32 {
+unsafe fn hamming_simd_parallel_core<T: Jewel>(a: &[u8], b: &[u8]) -> u32 {
     T::count_mismatches(a.as_ptr(), b.as_ptr(), a.len())
 }
 
@@ -325,16 +323,14 @@ pub fn hamming_simd_movemask(a: &[u8], b: &[u8]) -> u32 {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {hamming_simd_movemask_x86_avx2::<AvxNx32x8>(a, b)};
+            return unsafe {hamming_simd_movemask_core::<AvxNx32x8>(a, b)};
         }
     }
 
     hamming_naive(a, b)
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-unsafe fn hamming_simd_movemask_x86_avx2<T: Jewel>(a: &[u8], b: &[u8]) -> u32 {
+unsafe fn hamming_simd_movemask_core<T: Jewel>(a: &[u8], b: &[u8]) -> u32 {
     T::mm_count_mismatches(a.as_ptr(), b.as_ptr(), a.len())
 }
 
@@ -375,7 +371,7 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {hamming_search_simd_x86_avx2::<AvxNx32x8>(needle, haystack, needle.len() as u32, true)};
+            return unsafe {hamming_search_simd_core::<AvxNx32x8>(needle, haystack, needle.len() as u32, true)};
         }
     }
 
@@ -420,16 +416,14 @@ pub fn hamming_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: bool)
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {hamming_search_simd_x86_avx2::<AvxNx32x8>(needle, haystack, k, best)};
+            return unsafe {hamming_search_simd_core::<AvxNx32x8>(needle, haystack, k, best)};
         }
     }
 
     hamming_search_naive_k(needle, haystack, k, best)
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-unsafe fn hamming_search_simd_x86_avx2<T: Jewel>(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
+unsafe fn hamming_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
     let needle_len = needle.len();
     let len = haystack.len() + 1 - needle_len;
     let mut res = Vec::with_capacity(len >> 2);

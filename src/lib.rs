@@ -23,19 +23,13 @@
 
 use std;
 
-mod jewel;
-mod hamming;
-mod levenshtein;
+pub mod jewel;
+pub mod hamming;
+pub mod levenshtein;
 
 // re-export
 pub use hamming::*;
 pub use levenshtein::*;
-
-#[cfg(target_arch = "x86")]
-use core::arch::x86::*;
-
-#[cfg(target_arch = "x86_64")]
-use core::arch::x86_64::*;
 
 // some shared utility stuff below
 
@@ -121,35 +115,5 @@ pub fn fill_str(dest: &mut [u8], src: &[u8]) {
     unsafe {
         std::ptr::copy_nonoverlapping(src.as_ptr(), dest.as_mut_ptr(), src.len());
     }
-}
-
-#[allow(dead_code)]
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[inline]
-#[target_feature(enable = "avx2")]
-unsafe fn print_x86_avx2(a: &str, b: __m256i){ // debug print AVX2 vectors
-    let mut arr = [0u8; 32];
-    _mm256_storeu_si256(arr.as_mut_ptr() as *mut __m256i, b);
-    print!("{}\t", a);
-
-    for i in 0..32 {
-        print!(" {:>3}", arr[i]);
-    }
-
-    println!();
-}
-
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[inline]
-#[target_feature(enable = "avx2")]
-unsafe fn shift_left_x86_avx2(a: __m256i) -> __m256i {
-    _mm256_alignr_epi8(_mm256_permute2x128_si256(a, a, 0b10000001i32), a, 1i32)
-}
-
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[inline]
-#[target_feature(enable = "avx2")]
-unsafe fn shift_right_x86_avx2(a: __m256i) -> __m256i {
-    _mm256_alignr_epi8(a, _mm256_permute2x128_si256(a, a, 0b00001000i32), 15i32)
 }
 
