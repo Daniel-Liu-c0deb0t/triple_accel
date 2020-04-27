@@ -358,8 +358,6 @@ unsafe fn hamming_simd_movemask_core<T: Jewel>(a: &[u8], b: &[u8]) -> u32 {
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
 pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
-    assert!(needle.len() <= 32);
-
     if needle.len() > haystack.len() {
         return vec![];
     }
@@ -403,8 +401,6 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
 pub fn hamming_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
-    assert!(needle.len() <= 32);
-
     if needle.len() > haystack.len() {
         return vec![];
     }

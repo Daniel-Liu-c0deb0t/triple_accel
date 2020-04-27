@@ -215,8 +215,6 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, 
 }
 
 pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
-    assert!(k <= 30);
-
     if a.len() == 0 && b.len() == 0 {
         return if trace_on {(0u32, Some(vec![]))} else {(0u32, None)};
     }
@@ -596,8 +594,6 @@ pub fn levenshtein_search_naive_k(needle: &[u8], haystack: &[u8], k: u32, best: 
 }
 
 pub fn levenshtein_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
-    assert!(needle.len() <= 32);
-
     if needle.len() == 0 {
         return vec![];
     }
@@ -613,8 +609,6 @@ pub fn levenshtein_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 }
 
 pub fn levenshtein_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
-    assert!(needle.len() <= 32);
-
     if needle.len() == 0 {
         return vec![];
     }

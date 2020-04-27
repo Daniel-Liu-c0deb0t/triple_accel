@@ -44,13 +44,14 @@ fn bench_rand_levenshtein(c: &mut Criterion) {
 
 fn bench_rand_levenshtein_k(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1234);
-    let (a_str, b_str) = rand_levenshtein_pair(1000, 30, &mut rng);
+    let k = 300;
+    let (a_str, b_str) = rand_levenshtein_pair(1000, k, &mut rng);
 
     let mut group = c.benchmark_group("bench_rand_levenshtein_k");
 
     group.bench_function("levenshtein_naive", |b| b.iter(|| levenshtein_naive(black_box(&a_str), &b_str, false)));
-    group.bench_function("levenshtein_naive_k", |b| b.iter(|| levenshtein_naive_k(black_box(&a_str), &b_str, 30, false)));
-    group.bench_function("levenshtein_simd_k", |b| b.iter(|| levenshtein_simd_k(black_box(&a_str), &b_str, 30, false)));
+    group.bench_function("levenshtein_naive_k", |b| b.iter(|| levenshtein_naive_k(black_box(&a_str), &b_str, k, false)));
+    group.bench_function("levenshtein_simd_k", |b| b.iter(|| levenshtein_simd_k(black_box(&a_str), &b_str, k, false)));
 
     group.finish();
 }
