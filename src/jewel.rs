@@ -22,18 +22,9 @@ pub trait Jewel {
     /// These operations are modify in place, so less memory allocations are needed
     /// on long sequences of operations.
     unsafe fn slow_loadu(&mut self, idx: usize, ptr: *const u8, len: usize, reverse: bool);
-    unsafe fn fast_loadu(&mut self, ptr: *const u8);
 
-    unsafe fn add(&mut self, o: &Self);
-    unsafe fn adds(&mut self, o: &Self);
-    unsafe fn neg_add(&mut self, o: &Self);
-    unsafe fn and(&mut self, o: &Self);
-    /// Self is the mask used for blending between `a` and `b`.
-    unsafe fn blendv(&mut self, a: &Self, b: &Self);
-    unsafe fn shift_left_1(&mut self);
-    unsafe fn shift_right_1(&mut self);
-    unsafe fn extract(&self, i: usize) -> u32;
-    unsafe fn insert(&mut self, i: usize, val: u32);
+    unsafe fn slow_extract(&self, i: usize) -> u32;
+    unsafe fn slow_insert(&mut self, i: usize, val: u32);
     /// last_0 is the last element, last_1 is the second to last, etc.
     unsafe fn insert_last_0(&mut self, val: u32);
     unsafe fn insert_last_1(&mut self, val: u32);
@@ -47,18 +38,34 @@ pub trait Jewel {
     unsafe fn count_mismatches(a_ptr: *const u8, b_ptr: *const u8, len: usize) -> u32;
     unsafe fn vector_count_mismatches(a: &Self, b_ptr: *const u8) -> u32;
 
-    /// These operations commonly require cloning anyways,
-    /// so why not fuse the clone with the operation?
-    unsafe fn cmpeq(a: &Self, b: &Self) -> Self;
-    unsafe fn cmpgt(a: &Self, b: &Self) -> Self;
-    unsafe fn min(a: &Self, b: &Self) -> Self;
-    unsafe fn max(a: &Self, b: &Self) -> Self;
-    unsafe fn triple_min_length(sub: &Self, a_gap: &Self, b_gap: &Self, sub_length: &Self, a_gap_length: &Self, b_gap_length: &Self, res1: &mut Self, res2: &mut Self);
+    unsafe fn add_mut(&mut self, b: &Self);
+    unsafe fn adds_mut(&mut self, b: &Self);
+    unsafe fn sub_mut(&mut self, b: &Self);
+    unsafe fn and_mut(&mut self, b: &Self);
+    unsafe fn cmpeq_mut(&mut self, b: &Self);
+    unsafe fn min_mut(&mut self, b: &Self);
+    unsafe fn max_mut(&mut self, b: &Self);
+    unsafe fn shift_left_1_mut(&mut self);
+    unsafe fn shift_right_1_mut(&mut self);
+
+    /// Overwrite a res vector to reduce memory allocations
+    unsafe fn add(a: &Self, b: &Self, res: &mut Self);
+    unsafe fn adds(a: &Self, b: &Self, res: &mut Self);
+    unsafe fn sub(a: &Self, b: &Self, res: &mut Self);
+    unsafe fn and(a: &Self, b: &Self, res: &mut Self);
+    unsafe fn cmpeq(a: &Self, b: &Self, res: &mut Self);
+    unsafe fn min(a: &Self, b: &Self, res: &mut Self);
+    unsafe fn max(a: &Self, b: &Self, res: &mut Self);
+    unsafe fn shift_left_1(a: &Self, res: &mut Self);
+    unsafe fn shift_right_1(a: &Self, res: &mut Self);
+
+    unsafe fn triple_min_length(sub: &Self, a_gap: &Self, b_gap: &Self, sub_length: &Self,
+                                a_gap_length: &Self, b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self);
+    unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self;
 }
 
 /// N x 32 x 8 vector backed with 256-bit AVX2 vectors
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[derive(Clone)]
 pub struct AvxNx32x8 {
     len: usize,
     v: Vec<__m256i>
@@ -151,90 +158,7 @@ impl Jewel for AvxNx32x8 {
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn fast_loadu(&mut self, ptr: *const u8) {
-        let avx2_ptr = ptr as *const __m256i;
-
-        for i in 0..self.v.len() {
-            *self.v.get_unchecked_mut(i) = _mm256_loadu_si256(avx2_ptr.offset(i as isize));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn add(&mut self, o: &AvxNx32x8) {
-        for i in 0..self.v.len() {
-            *self.v.get_unchecked_mut(i) = _mm256_add_epi8(*self.v.get_unchecked(i), *o.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn adds(&mut self, o: &AvxNx32x8) {
-        for i in 0..self.v.len() {
-            *self.v.get_unchecked_mut(i) = _mm256_adds_epi8(*self.v.get_unchecked(i), *o.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn neg_add(&mut self, o: &AvxNx32x8) {
-        for i in 0..self.v.len() {
-            *self.v.get_unchecked_mut(i) = _mm256_sub_epi8(*o.v.get_unchecked(i), *self.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn and(&mut self, o: &AvxNx32x8) {
-        for i in 0..self.v.len() {
-            *self.v.get_unchecked_mut(i) = _mm256_and_si256(*self.v.get_unchecked(i), *o.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn blendv(&mut self, a: &AvxNx32x8, b: &AvxNx32x8) {
-        for i in 0..self.v.len() {
-            *self.v.get_unchecked_mut(i) = _mm256_blendv_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i), *self.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn shift_left_1(&mut self) {
-        for i in 0..(self.v.len() - 1) {
-            let curr = self.v.get_unchecked(i);
-            // permute concatenates the second half of the current vector and the first half of the next vector
-            *self.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
-                _mm256_permute2x128_si256(*curr, *self.v.get_unchecked(i + 1), 0b00100001i32), *curr, 1i32);
-        }
-
-        // last one gets to shift in zeros
-        let last = self.v.len() - 1;
-        let curr = self.v.get_unchecked(last);
-        // permute concatenates the second half of the last vector and a vector of zeros
-        *self.v.get_unchecked_mut(last) = _mm256_alignr_epi8(_mm256_permute2x128_si256(*curr, *curr, 0b10000001i32), *curr, 1i32);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn shift_right_1(&mut self) {
-        for i in (1..self.v.len()).rev() {
-            let curr = self.v.get_unchecked(i);
-            // permute concatenates the second half of the previous vector and the first half of the current vector
-            *self.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
-                *curr, _mm256_permute2x128_si256(*curr, *self.v.get_unchecked(i - 1), 0b00000011i32), 15i32);
-        }
-
-        // first one gets to shift in zeros
-        let curr = self.v.get_unchecked(0);
-        // permute concatenates a vector of zeros and the first half of the first vector
-        *self.v.get_unchecked_mut(0) = _mm256_alignr_epi8(*curr, _mm256_permute2x128_si256(*curr, *curr, 0b00001000i32), 15i32);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn extract(&self, i: usize) -> u32 {
+    unsafe fn slow_extract(&self, i: usize) -> u32 {
         let idx = i >> 5;
         let j = i & 31;
         let mut arr = [0u8; 32];
@@ -244,7 +168,7 @@ impl Jewel for AvxNx32x8 {
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn insert(&mut self, i: usize, val: u32) {
+    unsafe fn slow_insert(&mut self, i: usize, val: u32) {
         let idx = i >> 5;
         let j = i & 31;
         let mut arr = [0u8; 32];
@@ -410,61 +334,209 @@ impl Jewel for AvxNx32x8 {
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn cmpeq(a: &AvxNx32x8, b: &AvxNx32x8) -> AvxNx32x8 {
-        let mut v = Vec::with_capacity(a.v.len());
-
-        for i in 0..a.v.len() {
-            v.push(_mm256_cmpeq_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i)));
-        }
-
-        AvxNx32x8{
-            len: a.len,
-            v: v
+    unsafe fn add_mut(&mut self, b: &AvxNx32x8) {
+        for i in 0..self.v.len() {
+            *self.v.get_unchecked_mut(i) = _mm256_add_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i));
         }
     }
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn cmpgt(a: &AvxNx32x8, b: &AvxNx32x8) -> AvxNx32x8 {
-        let mut v = Vec::with_capacity(a.v.len());
-
-        for i in 0..a.v.len() {
-            v.push(_mm256_cmpgt_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i)));
-        }
-
-        AvxNx32x8{
-            len: a.len,
-            v: v
+    unsafe fn adds_mut(&mut self, b: &AvxNx32x8) {
+        for i in 0..self.v.len() {
+            *self.v.get_unchecked_mut(i) = _mm256_adds_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i));
         }
     }
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn min(a: &AvxNx32x8, b: &AvxNx32x8) -> AvxNx32x8 {
-        let mut v = Vec::with_capacity(a.v.len());
-
-        for i in 0..a.v.len() {
-            v.push(_mm256_min_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i)));
-        }
-
-        AvxNx32x8{
-            len: a.len,
-            v: v
+    unsafe fn sub_mut(&mut self, b: &AvxNx32x8) {
+        for i in 0..self.v.len() {
+            *self.v.get_unchecked_mut(i) = _mm256_sub_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i));
         }
     }
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn max(a: &AvxNx32x8, b: &AvxNx32x8) -> AvxNx32x8 {
-        let mut v = Vec::with_capacity(a.v.len());
+    unsafe fn and_mut(&mut self, b: &AvxNx32x8) {
+        for i in 0..self.v.len() {
+            *self.v.get_unchecked_mut(i) = _mm256_and_si256(*self.v.get_unchecked(i), *b.v.get_unchecked(i));
+        }
+    }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn cmpeq_mut(&mut self, b: &AvxNx32x8) {
+        for i in 0..self.v.len() {
+            *self.v.get_unchecked_mut(i) = _mm256_cmpeq_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i));
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn min_mut(&mut self, b: &AvxNx32x8) {
+        for i in 0..self.v.len() {
+            *self.v.get_unchecked_mut(i) = _mm256_min_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i));
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn max_mut(&mut self, b: &AvxNx32x8) {
+        for i in 0..self.v.len() {
+            *self.v.get_unchecked_mut(i) = _mm256_max_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i));
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn shift_left_1_mut(&mut self) {
+        for i in 0..(self.v.len() - 1) {
+            let curr = *self.v.get_unchecked(i);
+            // permute concatenates the second half of the current vector and the first half of the next vector
+            *self.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
+                _mm256_permute2x128_si256(curr, *self.v.get_unchecked(i + 1), 0b00100001i32), curr, 1i32);
+        }
+
+        // last one gets to shift in zeros
+        let last = self.v.len() - 1;
+        let curr = *self.v.get_unchecked(last);
+        // permute concatenates the second half of the last vector and a vector of zeros
+        *self.v.get_unchecked_mut(last) = _mm256_alignr_epi8(_mm256_permute2x128_si256(curr, curr, 0b10000001i32), curr, 1i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn shift_right_1_mut(&mut self) {
+        for i in (1..self.v.len()).rev() {
+            let curr = *self.v.get_unchecked(i);
+            // permute concatenates the second half of the previous vector and the first half of the current vector
+            *self.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
+                curr, _mm256_permute2x128_si256(curr, *self.v.get_unchecked(i - 1), 0b00000011i32), 15i32);
+        }
+
+        // first one gets to shift in zeros
+        let curr = *self.v.get_unchecked(0);
+        // permute concatenates a vector of zeros and the first half of the first vector
+        *self.v.get_unchecked_mut(0) = _mm256_alignr_epi8(curr, _mm256_permute2x128_si256(curr, curr, 0b00001000i32), 15i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn add(a: &AvxNx32x8, b: &AvxNx32x8, res: &mut AvxNx32x8) {
         for i in 0..a.v.len() {
-            v.push(_mm256_max_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i)));
+            *res.v.get_unchecked_mut(i) = _mm256_add_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i));
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn adds(a: &AvxNx32x8, b: &AvxNx32x8, res: &mut AvxNx32x8) {
+        for i in 0..a.v.len() {
+            *res.v.get_unchecked_mut(i) = _mm256_adds_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i));
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn sub(a: &AvxNx32x8, b: &AvxNx32x8, res: &mut AvxNx32x8) {
+        for i in 0..a.v.len() {
+            *res.v.get_unchecked_mut(i) = _mm256_sub_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i));
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn and(a: &AvxNx32x8, b: &AvxNx32x8, res: &mut AvxNx32x8) {
+        for i in 0..a.v.len() {
+            *res.v.get_unchecked_mut(i) = _mm256_and_si256(*a.v.get_unchecked(i), *b.v.get_unchecked(i));
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn cmpeq(a: &AvxNx32x8, b: &AvxNx32x8, res: &mut AvxNx32x8) {
+        for i in 0..a.v.len() {
+            *res.v.get_unchecked_mut(i) = _mm256_cmpeq_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i));
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn min(a: &AvxNx32x8, b: &AvxNx32x8, res: &mut AvxNx32x8) {
+        for i in 0..a.v.len() {
+            *res.v.get_unchecked_mut(i) = _mm256_min_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i));
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn max(a: &AvxNx32x8, b: &AvxNx32x8, res: &mut AvxNx32x8) {
+        for i in 0..a.v.len() {
+            *res.v.get_unchecked_mut(i) = _mm256_max_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i));
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn shift_left_1(a: &AvxNx32x8, res: &mut AvxNx32x8) {
+        for i in 0..(a.v.len() - 1) {
+            let curr = *a.v.get_unchecked(i);
+            // permute concatenates the second half of the current vector and the first half of the next vector
+            *res.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
+                _mm256_permute2x128_si256(curr, *a.v.get_unchecked(i + 1), 0b00100001i32), curr, 1i32);
+        }
+
+        // last one gets to shift in zeros
+        let last = a.v.len() - 1;
+        let curr = *a.v.get_unchecked(last);
+        // permute concatenates the second half of the last vector and a vector of zeros
+        *res.v.get_unchecked_mut(last) = _mm256_alignr_epi8(_mm256_permute2x128_si256(curr, curr, 0b10000001i32), curr, 1i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn shift_right_1(a: &AvxNx32x8, res: &mut AvxNx32x8) {
+        for i in (1..a.v.len()).rev() {
+            let curr = *a.v.get_unchecked(i);
+            // permute concatenates the second half of the previous vector and the first half of the current vector
+            *res.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
+                curr, _mm256_permute2x128_si256(curr, *a.v.get_unchecked(i - 1), 0b00000011i32), 15i32);
+        }
+
+        // first one gets to shift in zeros
+        let curr = *a.v.get_unchecked(0);
+        // permute concatenates a vector of zeros and the first half of the first vector
+        *res.v.get_unchecked_mut(0) = _mm256_alignr_epi8(curr, _mm256_permute2x128_si256(curr, curr, 0b00001000i32), 15i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn triple_argmin(sub: &AvxNx32x8, a_gap: &AvxNx32x8, b_gap: &AvxNx32x8, res_min: &mut AvxNx32x8) -> AvxNx32x8 {
+        // return the edit used in addition to doing a min operation
+        // hide latency by minimizing dependencies
+        let mut v = Vec::with_capacity(sub.v.len());
+
+        for i in 0..sub.v.len() {
+            let sub = *sub.v.get_unchecked(i);
+            let a_gap = *a_gap.v.get_unchecked(i);
+            let b_gap = *b_gap.v.get_unchecked(i);
+
+            let res_min1 = _mm256_min_epi8(a_gap, b_gap);
+            // a gap: 1 - 0 = 1, b gap: 1 - -1 = 2
+            let res_arg1 = _mm256_sub_epi8(_mm256_set1_epi8(1), _mm256_cmpgt_epi8(a_gap, b_gap));
+
+            let res_min2 = _mm256_min_epi8(sub, res_min1);
+            // sub: 0
+            let res_arg2 = _mm256_and_si256(_mm256_cmpgt_epi8(sub, res_min1), res_arg1);
+
+            *res_min.v.get_unchecked_mut(i) = res_min2;
+            v.push(res_arg2);
         }
 
         AvxNx32x8{
-            len: a.len,
-            v: v
+            v: v,
+            len: sub.len
         }
     }
 

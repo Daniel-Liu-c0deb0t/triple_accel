@@ -231,7 +231,7 @@ pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, O
     levenshtein_naive_k(a, b, k, trace_on)
 }
 
-unsafe fn levenshtein_simd_core<T: Jewel + Clone>(a_old: &[u8], b_old: &[u8], k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
     // swap a and b so that a is shorter than b, if applicable
     // makes operations later on slightly easier, since length of a <= length of b
     let swap = a_old.len() > b_old.len();
@@ -257,10 +257,10 @@ unsafe fn levenshtein_simd_core<T: Jewel + Clone>(a_old: &[u8], b_old: &[u8], k:
     let k2_div2 = k2 >> 1;
 
     // set dp[0][0] = 0
-    dp1.insert(k1_div2, 0);
+    dp1.slow_insert(k1_div2, 0);
     // set dp[0][1] = 1 and dp[1][0] = 1
-    dp2.insert(k2_div2 - 1, 1);
-    dp2.insert(k2_div2, 1);
+    dp2.slow_insert(k2_div2 - 1, 1);
+    dp2.slow_insert(k2_div2, 1);
 
     // a_k1_window and a_k2_window represent reversed portions of the string a
     // copy in half of k1/k2 number of characters
@@ -304,9 +304,12 @@ unsafe fn levenshtein_simd_core<T: Jewel + Clone>(a_old: &[u8], b_old: &[u8], k:
     if trace_on {
         traceback_arr.push(T::repeating(0, dp1.upper_bound()));
         traceback_arr.push(T::repeating(0, dp2.upper_bound()));
-        traceback_arr.get_unchecked_mut(1).insert(k2_div2 - 1, 2);
-        traceback_arr.get_unchecked_mut(1).insert(k2_div2, 1);
+        traceback_arr.get_unchecked_mut(1).slow_insert(k2_div2 - 1, 2);
+        traceback_arr.get_unchecked_mut(1).slow_insert(k2_div2, 1);
     }
+
+    let mut sub = T::repeating(0, dp1.upper_bound());
+    let mut gap = T::repeating(0, dp1.upper_bound());
 
     // example: allow k = 2 edits for two strings of length 3
     //      -b--   
@@ -359,80 +362,84 @@ unsafe fn levenshtein_simd_core<T: Jewel + Clone>(a_old: &[u8], b_old: &[u8], k:
         k2_idx += 1;
 
         // move windows for the strings a and b
-        a_k1_window.shift_right_1();
+        a_k1_window.shift_right_1_mut();
 
         if k1_idx < a_len {
             a_k1_window.insert_first(*a.get_unchecked(k1_idx) as u32);
         }
 
-        b_k1_window.shift_left_1();
+        b_k1_window.shift_left_1_mut();
 
         if k1_idx < b_len {
             b_k1_window.insert_last_1(*b.get_unchecked(k1_idx) as u32); // k1 - 1
         }
 
-        a_k2_window.shift_right_1();
+        a_k2_window.shift_right_1_mut();
 
         if k2_idx < a_len {
             a_k2_window.insert_first(*a.get_unchecked(k2_idx) as u32);
         }
 
-        b_k2_window.shift_left_1();
+        b_k2_window.shift_left_1_mut();
 
         if k2_idx < b_len {
             b_k2_window.insert_last_2(*b.get_unchecked(k2_idx) as u32);
         }
 
         // (anti) diagonal that matches in the a and b windows
-        let mut sub_k1 = T::cmpeq(&a_k1_window, &b_k1_window);
+        T::cmpeq(&a_k1_window, &b_k1_window, &mut sub);
         // add negative ones to cells that have matching characters from a and b
-        sub_k1.adds(&dp1);
+        sub.adds_mut(&dp1);
         // cost of gaps in a
-        let mut a_gap_k1 = dp2.clone();
-        a_gap_k1.shift_right_1();
-        a_gap_k1.insert_first_max();
+        T::shift_right_1(&dp2, &mut gap);
+        gap.insert_first_max();
         // cost of gaps in b: dp2
 
         // min of the cost of all three edit operations
         if trace_on {
-            let min = triple_argmin(&sub_k1, &a_gap_k1, &dp2, &ones);
-            dp1 = dp2;
-            dp2 = min.0;
-            dp2.adds(&ones);
-            traceback_arr.push(min.1);
-        }else{
-            let temp = T::min(&sub_k1, &T::min(&a_gap_k1, &dp2));
+            let args = T::triple_argmin(&sub, &gap, &dp2, &mut dp1);
+            let temp = dp1;
             dp1 = dp2;
             dp2 = temp;
-            dp2.adds(&ones);
+            dp2.adds_mut(&ones);
+            traceback_arr.push(args);
+        }else{
+            T::min(&gap, &dp2, &mut dp1);
+            dp1.min_mut(&sub);
+            let temp = dp1;
+            dp1 = dp2;
+            dp2 = temp;
+            dp2.adds_mut(&ones);
         }
 
         // (anti) diagonal that matches in the a and b windows
-        let mut sub_k2 = T::cmpeq(&a_k2_window, &b_k2_window);
+        T::cmpeq(&a_k2_window, &b_k2_window, &mut sub);
         // add negative ones to cells that have matching characters from a and b
-        sub_k2.adds(&dp1);
+        sub.adds_mut(&dp1);
         // cost of gaps in b
-        let mut b_gap_k2 = dp2.clone();
-        b_gap_k2.shift_left_1();
-        b_gap_k2.insert_last_max(); // k1, shift in max value
+        T::shift_left_1(&dp2, &mut gap);
+        gap.insert_last_max(); // k1, shift in max value
         // cost of gaps in a: dp2
 
         // min of the cost of all three edit operations
         if trace_on {
-            let min = triple_argmin(&sub_k2, &dp2, &b_gap_k2, &ones);
-            dp1 = dp2;
-            dp2 = min.0;
-            dp2.adds(&ones);
-            traceback_arr.push(min.1);
-        }else{
-            let temp = T::min(&sub_k2, &T::min(&dp2, &b_gap_k2));
+            let args = T::triple_argmin(&sub, &dp2, &gap, &mut dp1);
+            let temp = dp1;
             dp1 = dp2;
             dp2 = temp;
-            dp2.adds(&ones);
+            dp2.adds_mut(&ones);
+            traceback_arr.push(args);
+        }else{
+            T::min(&dp2, &gap, &mut dp1);
+            dp1.min_mut(&sub);
+            let temp = dp1;
+            dp1 = dp2;
+            dp2 = temp;
+            dp2.adds_mut(&ones);
         }
     }
 
-    let final_res = if ends_with_k2 {dp2.extract(final_idx)} else {dp1.extract(final_idx)};
+    let final_res = if ends_with_k2 {dp2.slow_extract(final_idx)} else {dp1.slow_extract(final_idx)};
 
     if !trace_on || final_res > k {
         return (final_res, None);
@@ -452,7 +459,7 @@ unsafe fn traceback<T: Jewel>(arr: &[T], mut idx: usize, a: &[u8], b: &[u8], swa
 
     while arr_idx > 0 {
         // each Jewel vector in arr is only visited once, so extract (which is costly) is fine
-        let edit = arr.get_unchecked(arr_idx).extract(idx);
+        let edit = arr.get_unchecked(arr_idx).slow_extract(idx);
 
         match edit {
             0 => { // match/mismatch
@@ -622,7 +629,7 @@ pub fn levenshtein_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: b
     levenshtein_search_naive_k(needle, haystack, k, best)
 }
 
-unsafe fn levenshtein_search_simd_core<T: Jewel + Clone>(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
+unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
     let mut dp1 = T::repeating_max(needle_len);
@@ -648,6 +655,13 @@ unsafe fn levenshtein_search_simd_core<T: Jewel + Clone>(needle: &[u8], haystack
     let mut haystack_idx = 0usize;
     let mut curr_k = k;
 
+    let mut match_mask = T::repeating(0, needle_len);
+    let mut sub = T::repeating(0, needle_len);
+    let mut sub_length = T::repeating(0, needle_len);
+    let mut needle_gap_length = T::repeating(0, needle_len);
+    let mut haystack_gap = T::repeating(0, needle_len);
+    let mut haystack_gap_length = T::repeating(0, needle_len);
+
     //       ..i...
     //       --h---
     // |     //////xxxx
@@ -664,46 +678,43 @@ unsafe fn levenshtein_search_simd_core<T: Jewel + Clone>(needle: &[u8], haystack
 
     for i in 1..len {
         // shift the haystack window
-        haystack_window.shift_left_1();
+        haystack_window.shift_left_1_mut();
 
         if haystack_idx < haystack_len {
             haystack_window.insert_last_0(*haystack.get_unchecked(haystack_idx) as u32);
             haystack_idx += 1;
         }
 
-        let match_mask = T::cmpeq(&needle_window, &haystack_window);
+        T::cmpeq(&needle_window, &haystack_window, &mut match_mask);
 
         // match/mismatch
-        let mut sub = dp1.clone();
-        sub.shift_left_1(); // zeros are shifted in
-        sub.add(&match_mask); // add -1 if match
+        T::shift_left_1(&dp1, &mut sub); // zeros are shifted in
+        sub.add_mut(&match_mask); // add -1 if match
 
-        let mut sub_length = length1.clone();
-        sub_length.shift_left_1();
-        sub_length.add(&ones);
+        T::shift_left_1(&length1, &mut sub_length);
+        sub_length.add_mut(&ones);
 
         // gap in needle: dp2
-        let mut needle_gap_length = length2.clone();
-        needle_gap_length.add(&ones);
+        T::add(&length2, &ones, &mut needle_gap_length);
 
         // gap in haystack
-        let mut haystack_gap = dp2.clone();
-        haystack_gap.shift_left_1(); // zeros are shifted in
-        let mut haystack_gap_length = length2.clone();
-        haystack_gap_length.shift_left_1();
+        T::shift_left_1(&dp2, &mut haystack_gap); // zeros are shifted in
 
-        let mut min0 = dp2.clone();
-        let mut min1 = dp2.clone();
-        T::triple_min_length(&sub, &dp2, &haystack_gap, &sub_length, &needle_gap_length, &haystack_gap_length, &mut min0, &mut min1);
+        T::shift_left_1(&length2, &mut haystack_gap_length);
+
+        T::triple_min_length(&sub, &dp2, &haystack_gap, &sub_length,
+                             &needle_gap_length, &haystack_gap_length, &mut dp1, &mut length1);
+        let mut temp = dp1;
         dp1 = dp2;
+        dp2 = temp;
+        temp = length1;
         length1 = length2;
-        dp2 = min0;
-        dp2.adds(&ones);
-        length2 = min1;
+        length2 = temp;
+        dp2.adds_mut(&ones);
 
         if i >= needle_len - 1 {
-            let final_res = dp2.extract(final_idx);
-            let final_length = length2.extract(final_idx) as usize;
+            let final_res = dp2.slow_extract(final_idx);
+            let final_length = length2.slow_extract(final_idx) as usize;
 
             if final_res <= curr_k {
                 let end_idx = i + 1 - needle_len;
@@ -722,7 +733,7 @@ unsafe fn levenshtein_search_simd_core<T: Jewel + Clone>(needle: &[u8], haystack
 
     res
 }
-
+/*
 unsafe fn triple_argmin<T: Jewel>(sub: &T, a_gap: &T, b_gap: &T, ones: &T) -> (T, T) {
     // return the edit used in addition to doing a min operation
     // hide latency by minimizing dependencies
@@ -759,4 +770,4 @@ unsafe fn triple_min_length<T: Jewel>(sub: &T, a_gap: &T, b_gap: &T, sub_length:
 
     (res_min2, res_length2)
 }
-
+*/
