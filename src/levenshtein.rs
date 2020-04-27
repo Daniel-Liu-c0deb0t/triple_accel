@@ -222,7 +222,11 @@ pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, O
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {levenshtein_simd_core::<AvxNx32x8>(a, b, k, trace_on)};
+            if k <= 30 {
+                return unsafe {levenshtein_simd_core::<Avx1x32x8>(a, b, k, trace_on)};
+            }else{
+                return unsafe {levenshtein_simd_core::<AvxNx32x8>(a, b, k, trace_on)};
+            }
         }
     }
 
@@ -601,7 +605,11 @@ pub fn levenshtein_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, needle.len() as u32, true)};
+            if needle.len() <= 32 {
+                return unsafe {levenshtein_search_simd_core::<Avx1x32x8>(needle, haystack, needle.len() as u32, true)};
+            }else{
+                return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, needle.len() as u32, true)};
+            }
         }
     }
 
@@ -616,7 +624,11 @@ pub fn levenshtein_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: b
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, k, best)};
+            if needle.len() <= 32 {
+                return unsafe {levenshtein_search_simd_core::<Avx1x32x8>(needle, haystack, k, best)};
+            }else{
+                return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, k, best)};
+            }
         }
     }
 

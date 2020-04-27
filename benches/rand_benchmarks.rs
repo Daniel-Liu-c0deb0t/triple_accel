@@ -44,7 +44,7 @@ fn bench_rand_levenshtein(c: &mut Criterion) {
 
 fn bench_rand_levenshtein_k(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1234);
-    let k = 300;
+    let k = 30;
     let (a_str, b_str) = rand_levenshtein_pair(1000, k, &mut rng);
 
     let mut group = c.benchmark_group("bench_rand_levenshtein_k");
