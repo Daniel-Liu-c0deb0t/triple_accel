@@ -104,7 +104,7 @@ pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec
     }
 }
 
-pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> Option<(u32, Option<Vec<Edit>>)> {
     let swap = a.len() > b.len(); // swap so that a len <= b len
     let a_new = if swap {b} else {a};
     let a_new_len = a_new.len();
@@ -113,7 +113,7 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, 
     let k_usize = k as usize;
 
     if b_new_len - a_new_len > k_usize {
-        return ((b_new_len - a_new_len) as u32, None);
+        return None;
     }
 
     let len = a_new_len + 1;
@@ -185,8 +185,12 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, 
         dp2 = temp;
     }
 
-    if !trace_on || dp1[hi - lo - 1] > k {
-        return (dp1[hi - lo - 1], None);
+    if dp1[hi - lo - 1] > k {
+        return None;
+    }
+
+    if !trace_on {
+        return Some((dp1[hi - lo - 1], None));
     }
 
     let mut res: Vec<Edit> = Vec::with_capacity(((dp1[hi - lo - 1] << 1) + 1) as usize);
@@ -223,12 +227,12 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, 
     }
 
     res.reverse();
-    (dp1[hi - lo - 1], Some(res))
+    Some((dp1[hi - lo - 1], Some(res)))
 }
 
-pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> Option<(u32, Option<Vec<Edit>>)> {
     if a.len() == 0 && b.len() == 0 {
-        return if trace_on {(0u32, Some(vec![]))} else {(0u32, None)};
+        return if trace_on {Some((0u32, Some(vec![])))} else {Some((0u32, None))};
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -245,7 +249,7 @@ pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, O
     levenshtein_naive_k(a, b, k, trace_on)
 }
 
-unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, trace_on: bool) -> Option<(u32, Option<Vec<Edit>>)> {
     // swap a and b so that a is shorter than b, if applicable
     // makes operations later on slightly easier, since length of a <= length of b
     let swap = a_old.len() > b_old.len();
@@ -255,7 +259,7 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
     let b_len = b.len();
 
     if b_len - a_len > k as usize {
-        return ((b_len - a_len) as u32, None);
+        return None;
     }
 
     // initialized with max value of i8
@@ -457,11 +461,15 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
 
     let final_res = if ends_with_k2 {dp2.slow_extract(final_idx)} else {dp1.slow_extract(final_idx)};
 
-    if !trace_on || final_res > k {
-        return (final_res, None);
+    if final_res > k {
+        return None;
     }
 
-    (final_res, Some(traceback(&traceback_arr, final_res, final_idx, a, b, swap, ends_with_k2)))
+    if !trace_on {
+        return Some((final_res, None));
+    }
+
+    Some((final_res, Some(traceback(&traceback_arr, final_res, final_idx, a, b, swap, ends_with_k2))))
 }
 
 unsafe fn traceback<T: Jewel>(arr: &[T], k: u32, mut idx: usize, a: &[u8], b: &[u8], swap: bool, mut is_k2: bool) -> Vec<Edit> {
@@ -524,15 +532,15 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec<E
     let mut k = 30;
     let mut res = levenshtein_simd_k(a, b, k, false);
 
-    while res.0 > k {
+    while res.is_none() {
         k <<= 2; // multiply by 4 every time (instead of the usual multiple by 2) for speed
-        res = levenshtein_naive_k(a, b, k, false);
+        res = levenshtein_simd_k(a, b, k, false);
     }
 
     if trace_on { // save memory by only calculating the traceback at the end, with an extra step
-        if res.0 <= 30 {levenshtein_simd_k(a, b, res.0, true)} else {levenshtein_naive_k(a, b, res.0, true)}
+        levenshtein_simd_k(a, b, res.unwrap().0, true).unwrap()
     }else{
-        res
+        res.unwrap()
     }
 }
 

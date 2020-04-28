@@ -202,37 +202,37 @@ fn test_trace_on_levenshtein_exp() {
 fn test_basic_levenshtein_naive_k() {
     let a1 = b"abcde";
     let b1 = b" ab cde";
-    let mut res = levenshtein_naive_k(a1, b1, 2, false);
+    let mut res = levenshtein_naive_k(a1, b1, 2, false).unwrap();
     assert!(res.0 == 2);
     assert!(res.1.is_none());
 
     let a2 = b"abcde";
     let b2 = b"";
-    res = levenshtein_naive_k(a2, b2, 10, false);
+    res = levenshtein_naive_k(a2, b2, 10, false).unwrap();
     assert!(res.0 == 5);
     assert!(res.1.is_none());
 
     let a3 = b"abcde";
     let b3 = b"abcdee";
-    res = levenshtein_naive_k(a3, b3, 2, false);
+    res = levenshtein_naive_k(a3, b3, 2, false).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.is_none());
 
     let a4 = b"abcde";
     let b4 = b"acde";
-    res = levenshtein_naive_k(a4, b4, 2, false);
+    res = levenshtein_naive_k(a4, b4, 2, false).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.is_none());
 
     let a5 = b"abcde";
     let b5 = b"abbde";
-    res = levenshtein_naive_k(a5, b5, 2, false);
+    res = levenshtein_naive_k(a5, b5, 2, false).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.is_none());
 
     let a6 = b"abcde";
     let b6 = b"abbde";
-    res = levenshtein_naive_k(a6, b6, 1, false);
+    res = levenshtein_naive_k(a6, b6, 1, false).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.is_none());
 }
@@ -241,7 +241,7 @@ fn test_basic_levenshtein_naive_k() {
 fn test_trace_on_levenshtein_naive_k() {
     let a1 = b"abcde";
     let b1 = b" ab cde";
-    let mut res = levenshtein_naive_k(a1, b1, 2, true);
+    let mut res = levenshtein_naive_k(a1, b1, 2, true).unwrap();
     assert!(res.0 == 2);
     assert!(res.1.unwrap() == vec![Edit{edit: EditType::AGap, count: 1},
                                    Edit{edit: EditType::Match, count: 2},
@@ -250,13 +250,13 @@ fn test_trace_on_levenshtein_naive_k() {
 
     let a2 = b"abcde";
     let b2 = b"";
-    res = levenshtein_naive_k(a2, b2, 10, true);
+    res = levenshtein_naive_k(a2, b2, 10, true).unwrap();
     assert!(res.0 == 5);
     assert!(res.1.unwrap() == vec![Edit{edit: EditType::BGap, count: 5}]);
 
     let a3 = b"abcde";
     let b3 = b"abcce";
-    res = levenshtein_naive_k(a3, b3, 2, true);
+    res = levenshtein_naive_k(a3, b3, 2, true).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.unwrap() == vec![Edit{edit: EditType::Match, count: 3},
                                    Edit{edit: EditType::Mismatch, count: 1},
@@ -267,31 +267,31 @@ fn test_trace_on_levenshtein_naive_k() {
 fn test_basic_levenshtein_simd_k() {
     let a1 = b"abcde";
     let b1 = b" ab cde";
-    let mut res = levenshtein_simd_k(a1, b1, 2, false);
+    let mut res = levenshtein_simd_k(a1, b1, 2, false).unwrap();
     assert!(res.0 == 2);
     assert!(res.1.is_none());
 
     let a2 = b"abcde";
     let b2 = b"";
-    res = levenshtein_simd_k(a2, b2, 30, false);
+    res = levenshtein_simd_k(a2, b2, 30, false).unwrap();
     assert!(res.0 == 5);
     assert!(res.1.is_none());
 
     let a3 = b"abcde";
     let b3 = b"abcdee";
-    res = levenshtein_simd_k(a3, b3, 20, false);
+    res = levenshtein_simd_k(a3, b3, 20, false).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.is_none());
 
     let a4 = b"abcde";
     let b4 = b"acde";
-    res = levenshtein_simd_k(a4, b4, 1, false);
+    res = levenshtein_simd_k(a4, b4, 1, false).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.is_none());
 
     let a5 = b"abcde";
     let b5 = b"abbde";
-    res = levenshtein_simd_k(a5, b5, 2, false);
+    res = levenshtein_simd_k(a5, b5, 2, false).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.is_none());
 }
@@ -300,7 +300,7 @@ fn test_basic_levenshtein_simd_k() {
 fn test_trace_on_levenshtein_simd_k() {
     let a1 = b"abcde";
     let b1 = b" ab cde";
-    let mut res = levenshtein_simd_k(a1, b1, 30, true);
+    let mut res = levenshtein_simd_k(a1, b1, 30, true).unwrap();
     assert!(res.0 == 2);
     assert!(res.1.unwrap() == vec![Edit{edit: EditType::AGap, count: 1},
                                    Edit{edit: EditType::Match, count: 2},
@@ -309,13 +309,13 @@ fn test_trace_on_levenshtein_simd_k() {
 
     let a2 = b"abcde";
     let b2 = b"";
-    res = levenshtein_simd_k(a2, b2, 5, true);
+    res = levenshtein_simd_k(a2, b2, 5, true).unwrap();
     assert!(res.0 == 5);
     assert!(res.1.unwrap() == vec![Edit{edit: EditType::BGap, count: 5}]);
 
     let a3 = b"abcde";
     let b3 = b"abcce";
-    res = levenshtein_simd_k(a3, b3, 1, true);
+    res = levenshtein_simd_k(a3, b3, 1, true).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.unwrap() == vec![Edit{edit: EditType::Match, count: 3},
                                    Edit{edit: EditType::Mismatch, count: 1},
