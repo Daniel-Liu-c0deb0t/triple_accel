@@ -9,7 +9,7 @@ use core::arch::x86_64::*;
 /// Jewel provides a uniform interface for SIMD operations.
 ///
 /// To save space, most operations are modify in place.
-pub trait Jewel {
+pub trait Jewel: fmt::Display {
     /// Functions for creating a Jewel vector.
     unsafe fn repeating(val: u32, len: usize) -> Self;
     unsafe fn repeating_max(len: usize) -> Self;
@@ -17,7 +17,8 @@ pub trait Jewel {
 
     /// Figure out the length of the created vector, which may
     /// be higher than the length given by the caller.
-    unsafe fn upper_bound(&self) -> usize;
+    fn upper_bound(&self) -> usize;
+    fn set_len(&mut self, len: usize);
 
     /// These operations are modify in place, so less memory allocations are needed
     /// on long sequences of operations.
@@ -124,10 +125,14 @@ impl Jewel for AvxNx32x8 {
         }
     }
 
-    #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn upper_bound(&self) -> usize {
+    fn upper_bound(&self) -> usize {
         self.v.len() << 5
+    }
+
+    #[inline]
+    fn set_len(&mut self, len: usize) {
+        self.len = len;
     }
 
     #[target_feature(enable = "avx2")]
@@ -658,10 +663,14 @@ impl Jewel for Avx1x32x8 {
         }
     }
 
-    #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn upper_bound(&self) -> usize {
+    fn upper_bound(&self) -> usize {
         32
+    }
+
+    #[inline]
+    fn set_len(&mut self, len: usize) {
+        self.len = len;
     }
 
     #[target_feature(enable = "avx2")]

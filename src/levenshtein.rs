@@ -64,30 +64,36 @@ pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec
     }
 
     if trace_on {
-        let mut res = Vec::with_capacity(a_new_len + b_new_len);
+        let mut res: Vec<Edit> = Vec::with_capacity(((dp1[a_new_len] << 1) + 1) as usize);
         let mut i = b_new_len;
         let mut j = a_new_len;
 
         while i > 0 || j > 0 {
             let edit = traceback[i * len + j];
 
-            match edit {
+            let e = match edit {
                 0 => {
-                    res.push(if a_new[j - 1] == b_new[i - 1] {Edit::Match} else {Edit::Mismatch});
                     i -= 1;
                     j -= 1;
+                    if a_new[j] == b_new[i] {EditType::Match} else {EditType::Mismatch}
                 },
                 1 => {
-                    res.push(if swap {Edit::BGap} else {Edit::AGap});
                     i -= 1;
+                    if swap {EditType::BGap} else {EditType::AGap}
                 },
                 2 => {
-                    res.push(if swap {Edit::AGap} else {Edit::BGap});
                     j -= 1;
+                    if swap {EditType::AGap} else {EditType::BGap}
                 },
                 _ => {
                     panic!("This should not be reached!");
                 }
+            };
+
+            if res.len() > 0 && res.last().unwrap().edit == e {
+                res.last_mut().unwrap().count += 1;
+            }else{
+                res.push(Edit{edit: e, count: 1});
             }
         }
 
@@ -183,30 +189,36 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> (u32, 
         return (dp1[hi - lo - 1], None);
     }
 
-    let mut res = Vec::with_capacity(a_new_len + b_new_len);
+    let mut res: Vec<Edit> = Vec::with_capacity(((dp1[hi - lo - 1] << 1) + 1) as usize);
     let mut i = a_new_len;
     let mut j = b_new_len;
 
     while i > 0 || j > 0 {
         let edit = traceback[i * k_len + (j - (if i > k_usize {i - k_usize} else {0}))];
 
-        match edit {
+        let e = match edit {
             0 => {
-                res.push(if a_new[i - 1] == b_new[j - 1] {Edit::Match} else {Edit::Mismatch});
                 i -= 1;
                 j -= 1;
+                if a_new[i] == b_new[j] {EditType::Match} else {EditType::Mismatch}
             },
             1 => {
-                res.push(if swap {Edit::BGap} else {Edit::AGap});
                 j -= 1;
+                if swap {EditType::BGap} else {EditType::AGap}
             },
             2 => {
-                res.push(if swap {Edit::AGap} else {Edit::BGap});
                 i -= 1;
+                if swap {EditType::AGap} else {EditType::BGap}
             },
             _ => {
                 panic!("This should not be reached!");
             }
+        };
+
+        if res.len() > 0 && res.last().unwrap().edit == e {
+            res.last_mut().unwrap().count += 1;
+        }else{
+            res.push(Edit{edit: e, count: 1});
         }
     }
 
@@ -249,13 +261,15 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
     // initialized with max value of i8
     // must use saturated additions afterwards to not overflow
     let mut dp1 = T::repeating_max((k + 2) as usize);
-    let mut dp2 = T::repeating_max(dp1.upper_bound());
+    let max_len = dp1.upper_bound();
+    dp1.set_len(max_len);
+    let mut dp2 = T::repeating_max(max_len);
 
     // lengths of the (anti) diagonals
-    // assumes upper_bound is even
-    let k1 = dp1.upper_bound() - 1;
+    // assumes max_len is even
+    let k1 = max_len - 1;
     let k1_div2 = k1 >> 1;
-    let k2 = dp1.upper_bound() - 2;
+    let k2 = max_len - 2;
     let k2_div2 = k2 >> 1;
 
     // set dp[0][0] = 0
@@ -268,16 +282,16 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
     // copy in half of k1/k2 number of characters
     // these characters are placed in the second half of b windows
     // since a windows are reversed, the characters are placed in reverse in the first half of b windows
-    let mut a_k1_window = T::repeating(0, dp1.upper_bound());
+    let mut a_k1_window = T::repeating(0, max_len);
     a_k1_window.slow_loadu(k1_div2 - 1, a.as_ptr(), std::cmp::min(k1_div2, a_len), true);
 
-    let mut b_k1_window = T::repeating(0, dp1.upper_bound());
+    let mut b_k1_window = T::repeating(0, max_len);
     b_k1_window.slow_loadu(k1_div2 + 1, b.as_ptr(), std::cmp::min(k1_div2, b_len), false);
 
-    let mut a_k2_window = T::repeating(0, dp1.upper_bound());
+    let mut a_k2_window = T::repeating(0, max_len);
     a_k2_window.slow_loadu(k2_div2 - 1, a.as_ptr(), std::cmp::min(k2_div2, a_len), true);
 
-    let mut b_k2_window = T::repeating(0, dp1.upper_bound());
+    let mut b_k2_window = T::repeating(0, max_len);
     b_k2_window.slow_loadu(k2_div2, b.as_ptr(), std::cmp::min(k2_div2, b_len), false);
 
     // used to keep track of the next characters to place in the windows
@@ -285,7 +299,7 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
     let mut k2_idx = k2_div2 - 1;
 
     // reusable constants
-    let ones = T::repeating(1, dp1.upper_bound());
+    let ones = T::repeating(1, max_len);
 
     let len_diff = b_len - a_len;
     let len = a_len + b_len + 1;
@@ -304,14 +318,14 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
     let mut traceback_arr = if trace_on {Vec::with_capacity(len + (len & 1))} else {vec![]};
 
     if trace_on {
-        traceback_arr.push(T::repeating(0, dp1.upper_bound()));
-        traceback_arr.push(T::repeating(0, dp2.upper_bound()));
+        traceback_arr.push(T::repeating(0, max_len));
+        traceback_arr.push(T::repeating(0, max_len));
         traceback_arr.get_unchecked_mut(1).slow_insert(k2_div2 - 1, 2);
         traceback_arr.get_unchecked_mut(1).slow_insert(k2_div2, 1);
     }
 
-    let mut sub = T::repeating(0, dp1.upper_bound());
-    let mut gap = T::repeating(0, dp1.upper_bound());
+    let mut sub = T::repeating(0, max_len);
+    let mut gap = T::repeating(0, max_len);
 
     // example: allow k = 2 edits for two strings of length 3
     //      -b--   
@@ -447,31 +461,30 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
         return (final_res, None);
     }
 
-    (final_res, Some(traceback(&traceback_arr, final_idx, a, b, swap, ends_with_k2)))
+    (final_res, Some(traceback(&traceback_arr, final_res, final_idx, a, b, swap, ends_with_k2)))
 }
 
-unsafe fn traceback<T: Jewel>(arr: &[T], mut idx: usize, a: &[u8], b: &[u8], swap: bool, mut is_k2: bool) -> Vec<Edit> {
+unsafe fn traceback<T: Jewel>(arr: &[T], k: u32, mut idx: usize, a: &[u8], b: &[u8], swap: bool, mut is_k2: bool) -> Vec<Edit> {
     // keep track of position in traditional dp array and strings
     let mut i = a.len(); // index in a
     let mut j = b.len(); // index in b
 
     // last diagonal may overshoot, so ignore it
     let mut arr_idx = arr.len() - 1 - (if is_k2 {0} else {1});
-    let mut res = Vec::with_capacity(a.len() + b.len());
+    let mut res: Vec<Edit> = Vec::with_capacity(((1 << k) + 1) as usize);
 
     while arr_idx > 0 {
         // each Jewel vector in arr is only visited once, so extract (which is costly) is fine
         let edit = arr.get_unchecked(arr_idx).slow_extract(idx);
 
-        match edit {
+        let e = match edit {
             0 => { // match/mismatch
-                res.push(if *a.get_unchecked(i - 1) == *b.get_unchecked(j - 1) {Edit::Match} else {Edit::Mismatch});
                 arr_idx -= 2;
                 i -= 1;
                 j -= 1;
+                if *a.get_unchecked(i) == *b.get_unchecked(j) {EditType::Match} else {EditType::Mismatch}
             },
             1 => { // a gap
-                res.push(if swap {Edit::BGap} else {Edit::AGap}); // account for the swap in the beginning
                 arr_idx -= 1;
 
                 if !is_k2 {
@@ -480,9 +493,9 @@ unsafe fn traceback<T: Jewel>(arr: &[T], mut idx: usize, a: &[u8], b: &[u8], swa
 
                 j -= 1;
                 is_k2 = !is_k2; // must account for alternating k1/k2 diagonals
+                if swap {EditType::BGap} else {EditType::AGap} // account for the swap in the beginning
             },
             2 => { // b gap
-                res.push(if swap {Edit::AGap} else {Edit::BGap});
                 arr_idx -= 1;
 
                 if is_k2 {
@@ -491,8 +504,15 @@ unsafe fn traceback<T: Jewel>(arr: &[T], mut idx: usize, a: &[u8], b: &[u8], swa
 
                 i -= 1;
                 is_k2 = !is_k2;
+                if swap {EditType::AGap} else {EditType::BGap}
             },
             _ => panic!("This should not be happening!")
+        };
+
+        if res.len() > 0 && res.last().unwrap().edit == e {
+            res.last_mut().unwrap().count += 1;
+        }else{
+            res.push(Edit{edit: e, count: 1});
         }
     }
 

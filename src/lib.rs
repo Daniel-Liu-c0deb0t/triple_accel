@@ -50,11 +50,20 @@ pub struct Match {
 ///
 /// This is usually returned as part of the traceback for matching routines.
 #[derive(Debug, PartialEq)]
-pub enum Edit {
+pub enum EditType {
     Match,
     Mismatch,
     AGap,
     BGap
+}
+
+/// A struct representing a sequence of edits of the same type.
+///
+/// This is returned in the run-length encoded traceback of matching routines.
+#[derive(Debug, PartialEq)]
+pub struct Edit {
+    pub edit: EditType,
+    pub count: usize
 }
 
 /// This creates a vector with the alignment and padding for `u128` values, and then convert it to a vector of `u8` values that is returned.
