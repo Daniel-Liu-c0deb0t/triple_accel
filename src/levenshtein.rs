@@ -262,7 +262,6 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
     // must use saturated additions afterwards to not overflow
     let mut dp1 = T::repeating_max((k + 2) as usize);
     let max_len = dp1.upper_bound();
-    dp1.set_len(max_len);
     let mut dp2 = T::repeating_max(max_len);
 
     // lengths of the (anti) diagonals

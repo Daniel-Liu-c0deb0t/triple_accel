@@ -18,7 +18,6 @@ pub trait Jewel: fmt::Display {
     /// Figure out the length of the created vector, which may
     /// be higher than the length given by the caller.
     fn upper_bound(&self) -> usize;
-    fn set_len(&mut self, len: usize);
 
     /// These operations are modify in place, so less memory allocations are needed
     /// on long sequences of operations.
@@ -112,7 +111,6 @@ macro_rules! single_operation_mut_param2 {
 /// N x 32 x 8 vector backed with 256-bit AVX2 vectors
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub struct AvxNx32x8 {
-    len: usize,
     v: Vec<__m256i>
 }
 
@@ -124,7 +122,6 @@ impl Jewel for AvxNx32x8 {
         let v = vec![_mm256_set1_epi8(val as i8); (len >> 5) + if (len & 31) > 0 {1} else {0}];
 
         AvxNx32x8{
-            len: len,
             v: v
         }
     }
@@ -135,7 +132,6 @@ impl Jewel for AvxNx32x8 {
         let v = vec![_mm256_set1_epi8(i8::max_value()); (len >> 5) + if (len & 31) > 0 {1} else {0}];
 
         AvxNx32x8{
-            len: len,
             v: v
         }
     }
@@ -164,19 +160,13 @@ impl Jewel for AvxNx32x8 {
         }
 
         AvxNx32x8{
-            v: v,
-            len: len
+            v: v
         }
     }
 
     #[inline]
     fn upper_bound(&self) -> usize {
         self.v.len() << 5
-    }
-
-    #[inline]
-    fn set_len(&mut self, len: usize) {
-        self.len = len;
     }
 
     #[target_feature(enable = "avx2")]
@@ -488,8 +478,7 @@ impl Jewel for AvxNx32x8 {
         }
 
         AvxNx32x8{
-            v: v,
-            len: sub.len
+            v: v
         }
     }
 
@@ -554,8 +543,8 @@ impl fmt::Display for AvxNx32x8 {
 
             let start = (self.v.len() - 1) << 5;
 
-            for i in 0..(self.len - start) {
-                if i == self.len - start - 1 {
+            for i in 0..(self.upper_bound() - start) {
+                if i == self.upper_bound() - start - 1 {
                     write!(f, "{:>3}", *arr.get_unchecked(i))?;
                 }else{
                     write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
@@ -570,7 +559,6 @@ impl fmt::Display for AvxNx32x8 {
 /// 1 x 32 x 8 vector backed with one AVX2 vector
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub struct Avx1x32x8 {
-    len: usize,
     v: __m256i
 }
 
@@ -580,7 +568,6 @@ impl Jewel for Avx1x32x8 {
     #[inline]
     unsafe fn repeating(val: u32, len: usize) -> Avx1x32x8 {
         Avx1x32x8{
-            len: len,
             v: _mm256_set1_epi8(val as i8)
         }
     }
@@ -589,7 +576,6 @@ impl Jewel for Avx1x32x8 {
     #[inline]
     unsafe fn repeating_max(len: usize) -> Avx1x32x8 {
         Avx1x32x8{
-            len: len,
             v: _mm256_set1_epi8(i8::max_value())
         }
     }
@@ -606,19 +592,13 @@ impl Jewel for Avx1x32x8 {
         let v = _mm256_loadu_si256(arr.as_ptr() as *const __m256i);
 
         Avx1x32x8{
-            v: v,
-            len: len
+            v: v
         }
     }
 
     #[inline]
     fn upper_bound(&self) -> usize {
         32
-    }
-
-    #[inline]
-    fn set_len(&mut self, len: usize) {
-        self.len = len;
     }
 
     #[target_feature(enable = "avx2")]
@@ -770,8 +750,7 @@ impl Jewel for Avx1x32x8 {
         let res_arg2 = _mm256_and_si256(_mm256_cmpgt_epi8(sub.v, res_min1), res_arg1);
 
         Avx1x32x8{
-            v: res_arg2,
-            len: sub.len
+            v: res_arg2
         }
     }
 
@@ -813,8 +792,8 @@ impl fmt::Display for Avx1x32x8 {
 
             _mm256_storeu_si256(arr_ptr, self.v);
 
-            for i in 0..self.len {
-                if i == self.len - 1 {
+            for i in 0..self.upper_bound() {
+                if i == self.upper_bound() - 1 {
                     write!(f, "{:>3}", *arr.get_unchecked(i))?;
                 }else{
                     write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
