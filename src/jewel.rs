@@ -65,6 +65,50 @@ pub trait Jewel: fmt::Display {
     unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self;
 }
 
+macro_rules! operation_param2 {
+    ($target:literal, $struct_name:ident, $fn_name:ident, $intrinsic:ident) => {
+        #[target_feature(enable = $target)]
+        #[inline]
+        unsafe fn $fn_name(a: &$struct_name, b: &$struct_name, res: &mut $struct_name) {
+            for i in 0..a.v.len() {
+                *res.v.get_unchecked_mut(i) = $intrinsic(*a.v.get_unchecked(i), *b.v.get_unchecked(i));
+            }
+        }
+    };
+}
+
+macro_rules! single_operation_param2 {
+    ($target:literal, $struct_name:ident, $fn_name:ident, $intrinsic:ident) => {
+        #[target_feature(enable = $target)]
+        #[inline]
+        unsafe fn $fn_name(a: &$struct_name, b: &$struct_name, res: &mut $struct_name) {
+            res.v = $intrinsic(a.v, b.v);
+        }
+    };
+}
+
+macro_rules! operation_mut_param2 {
+    ($target:literal, $struct_name:ident, $fn_name:ident, $intrinsic:ident) => {
+        #[target_feature(enable = $target)]
+        #[inline]
+        unsafe fn $fn_name(&mut self, b: &$struct_name) {
+            for i in 0..self.v.len() {
+                *self.v.get_unchecked_mut(i) = $intrinsic(*self.v.get_unchecked(i), *b.v.get_unchecked(i));
+            }
+        }
+    };
+}
+
+macro_rules! single_operation_mut_param2 {
+    ($target:literal, $struct_name:ident, $fn_name:ident, $intrinsic:ident) => {
+        #[target_feature(enable = $target)]
+        #[inline]
+        unsafe fn $fn_name(&mut self, b: &$struct_name) {
+            self.v = $intrinsic(self.v, b.v);
+        }
+    };
+}
+
 /// N x 32 x 8 vector backed with 256-bit AVX2 vectors
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub struct AvxNx32x8 {
@@ -337,61 +381,13 @@ impl Jewel for AvxNx32x8 {
         (a.v.len() << 5) as u32 - res
     }
 
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn add_mut(&mut self, b: &AvxNx32x8) {
-        for i in 0..self.v.len() {
-            *self.v.get_unchecked_mut(i) = _mm256_add_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn adds_mut(&mut self, b: &AvxNx32x8) {
-        for i in 0..self.v.len() {
-            *self.v.get_unchecked_mut(i) = _mm256_adds_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn sub_mut(&mut self, b: &AvxNx32x8) {
-        for i in 0..self.v.len() {
-            *self.v.get_unchecked_mut(i) = _mm256_sub_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn and_mut(&mut self, b: &AvxNx32x8) {
-        for i in 0..self.v.len() {
-            *self.v.get_unchecked_mut(i) = _mm256_and_si256(*self.v.get_unchecked(i), *b.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn cmpeq_mut(&mut self, b: &AvxNx32x8) {
-        for i in 0..self.v.len() {
-            *self.v.get_unchecked_mut(i) = _mm256_cmpeq_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn min_mut(&mut self, b: &AvxNx32x8) {
-        for i in 0..self.v.len() {
-            *self.v.get_unchecked_mut(i) = _mm256_min_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn max_mut(&mut self, b: &AvxNx32x8) {
-        for i in 0..self.v.len() {
-            *self.v.get_unchecked_mut(i) = _mm256_max_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i));
-        }
-    }
+    operation_mut_param2!("avx2", AvxNx32x8, add_mut, _mm256_add_epi8);
+    operation_mut_param2!("avx2", AvxNx32x8, adds_mut, _mm256_adds_epi8);
+    operation_mut_param2!("avx2", AvxNx32x8, sub_mut, _mm256_sub_epi8);
+    operation_mut_param2!("avx2", AvxNx32x8, and_mut, _mm256_and_si256);
+    operation_mut_param2!("avx2", AvxNx32x8, cmpeq_mut, _mm256_cmpeq_epi8);
+    operation_mut_param2!("avx2", AvxNx32x8, min_mut, _mm256_min_epi8);
+    operation_mut_param2!("avx2", AvxNx32x8, max_mut, _mm256_max_epi8);
 
     #[target_feature(enable = "avx2")]
     #[inline]
@@ -426,61 +422,13 @@ impl Jewel for AvxNx32x8 {
         *self.v.get_unchecked_mut(0) = _mm256_alignr_epi8(curr, _mm256_permute2x128_si256(curr, curr, 0b00001000i32), 15i32);
     }
 
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn add(a: &AvxNx32x8, b: &AvxNx32x8, res: &mut AvxNx32x8) {
-        for i in 0..a.v.len() {
-            *res.v.get_unchecked_mut(i) = _mm256_add_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn adds(a: &AvxNx32x8, b: &AvxNx32x8, res: &mut AvxNx32x8) {
-        for i in 0..a.v.len() {
-            *res.v.get_unchecked_mut(i) = _mm256_adds_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn sub(a: &AvxNx32x8, b: &AvxNx32x8, res: &mut AvxNx32x8) {
-        for i in 0..a.v.len() {
-            *res.v.get_unchecked_mut(i) = _mm256_sub_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn and(a: &AvxNx32x8, b: &AvxNx32x8, res: &mut AvxNx32x8) {
-        for i in 0..a.v.len() {
-            *res.v.get_unchecked_mut(i) = _mm256_and_si256(*a.v.get_unchecked(i), *b.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn cmpeq(a: &AvxNx32x8, b: &AvxNx32x8, res: &mut AvxNx32x8) {
-        for i in 0..a.v.len() {
-            *res.v.get_unchecked_mut(i) = _mm256_cmpeq_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn min(a: &AvxNx32x8, b: &AvxNx32x8, res: &mut AvxNx32x8) {
-        for i in 0..a.v.len() {
-            *res.v.get_unchecked_mut(i) = _mm256_min_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn max(a: &AvxNx32x8, b: &AvxNx32x8, res: &mut AvxNx32x8) {
-        for i in 0..a.v.len() {
-            *res.v.get_unchecked_mut(i) = _mm256_max_epi8(*a.v.get_unchecked(i), *b.v.get_unchecked(i));
-        }
-    }
+    operation_param2!("avx2", AvxNx32x8, add, _mm256_add_epi8);
+    operation_param2!("avx2", AvxNx32x8, adds, _mm256_adds_epi8);
+    operation_param2!("avx2", AvxNx32x8, sub, _mm256_sub_epi8);
+    operation_param2!("avx2", AvxNx32x8, and, _mm256_and_si256);
+    operation_param2!("avx2", AvxNx32x8, cmpeq, _mm256_cmpeq_epi8);
+    operation_param2!("avx2", AvxNx32x8, min, _mm256_min_epi8);
+    operation_param2!("avx2", AvxNx32x8, max, _mm256_max_epi8);
 
     #[target_feature(enable = "avx2")]
     #[inline]
@@ -763,47 +711,13 @@ impl Jewel for Avx1x32x8 {
         unimplemented!();
     }
 
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn add_mut(&mut self, b: &Avx1x32x8) {
-        self.v = _mm256_add_epi8(self.v, b.v);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn adds_mut(&mut self, b: &Avx1x32x8) {
-        self.v = _mm256_adds_epi8(self.v, b.v);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn sub_mut(&mut self, b: &Avx1x32x8) {
-        self.v = _mm256_sub_epi8(self.v, b.v);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn and_mut(&mut self, b: &Avx1x32x8) {
-        self.v = _mm256_and_si256(self.v, b.v);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn cmpeq_mut(&mut self, b: &Avx1x32x8) {
-        self.v = _mm256_cmpeq_epi8(self.v, b.v);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn min_mut(&mut self, b: &Avx1x32x8) {
-        self.v = _mm256_min_epi8(self.v, b.v);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn max_mut(&mut self, b: &Avx1x32x8) {
-        self.v = _mm256_max_epi8(self.v, b.v);
-    }
+    single_operation_mut_param2!("avx2", Avx1x32x8, add_mut, _mm256_add_epi8);
+    single_operation_mut_param2!("avx2", Avx1x32x8, adds_mut, _mm256_adds_epi8);
+    single_operation_mut_param2!("avx2", Avx1x32x8, sub_mut, _mm256_sub_epi8);
+    single_operation_mut_param2!("avx2", Avx1x32x8, and_mut, _mm256_and_si256);
+    single_operation_mut_param2!("avx2", Avx1x32x8, cmpeq_mut, _mm256_cmpeq_epi8);
+    single_operation_mut_param2!("avx2", Avx1x32x8, min_mut, _mm256_min_epi8);
+    single_operation_mut_param2!("avx2", Avx1x32x8, max_mut, _mm256_max_epi8);
 
     #[target_feature(enable = "avx2")]
     #[inline]
@@ -819,47 +733,13 @@ impl Jewel for Avx1x32x8 {
         self.v = _mm256_alignr_epi8(self.v, _mm256_permute2x128_si256(self.v, self.v, 0b00001000i32), 15i32);
     }
 
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn add(a: &Avx1x32x8, b: &Avx1x32x8, res: &mut Avx1x32x8) {
-        res.v = _mm256_add_epi8(a.v, b.v);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn adds(a: &Avx1x32x8, b: &Avx1x32x8, res: &mut Avx1x32x8) {
-        res.v = _mm256_adds_epi8(a.v, b.v);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn sub(a: &Avx1x32x8, b: &Avx1x32x8, res: &mut Avx1x32x8) {
-        res.v = _mm256_sub_epi8(a.v, b.v);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn and(a: &Avx1x32x8, b: &Avx1x32x8, res: &mut Avx1x32x8) {
-        res.v = _mm256_and_si256(a.v, b.v);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn cmpeq(a: &Avx1x32x8, b: &Avx1x32x8, res: &mut Avx1x32x8) {
-        res.v = _mm256_cmpeq_epi8(a.v, b.v);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn min(a: &Avx1x32x8, b: &Avx1x32x8, res: &mut Avx1x32x8) {
-        res.v = _mm256_min_epi8(a.v, b.v);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn max(a: &Avx1x32x8, b: &Avx1x32x8, res: &mut Avx1x32x8) {
-        res.v = _mm256_max_epi8(a.v, b.v);
-    }
+    single_operation_param2!("avx2", Avx1x32x8, add, _mm256_add_epi8);
+    single_operation_param2!("avx2", Avx1x32x8, adds, _mm256_adds_epi8);
+    single_operation_param2!("avx2", Avx1x32x8, sub, _mm256_sub_epi8);
+    single_operation_param2!("avx2", Avx1x32x8, and, _mm256_and_si256);
+    single_operation_param2!("avx2", Avx1x32x8, cmpeq, _mm256_cmpeq_epi8);
+    single_operation_param2!("avx2", Avx1x32x8, min, _mm256_min_epi8);
+    single_operation_param2!("avx2", Avx1x32x8, max, _mm256_max_epi8);
 
     #[target_feature(enable = "avx2")]
     #[inline]

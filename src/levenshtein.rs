@@ -85,9 +85,7 @@ pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec
                     j -= 1;
                     if swap {EditType::AGap} else {EditType::BGap}
                 },
-                _ => {
-                    panic!("This should not be reached!");
-                }
+                _ => unreachable!()
             };
 
             if res.len() > 0 && res.last().unwrap().edit == e {
@@ -214,9 +212,7 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> Option
                 i -= 1;
                 if swap {EditType::AGap} else {EditType::BGap}
             },
-            _ => {
-                panic!("This should not be reached!");
-            }
+            _ => unreachable!()
         };
 
         if res.len() > 0 && res.last().unwrap().edit == e {
@@ -514,7 +510,7 @@ unsafe fn traceback<T: Jewel>(arr: &[T], k: u32, mut idx: usize, a: &[u8], b: &[
                 is_k2 = !is_k2;
                 if swap {EditType::AGap} else {EditType::BGap}
             },
-            _ => panic!("This should not be happening!")
+            _ => unreachable!()
         };
 
         if res.len() > 0 && res.last().unwrap().edit == e {
