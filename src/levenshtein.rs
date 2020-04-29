@@ -413,17 +413,13 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
         // min of the cost of all three edit operations
         if trace_on {
             let args = T::triple_argmin(&sub, &gap, &dp2, &mut dp1);
-            let temp = dp1;
-            dp1 = dp2;
-            dp2 = temp;
+            std::mem::swap(&mut dp1, &mut dp2);
             dp2.adds_mut(&ones);
             traceback_arr.push(args);
         }else{
             T::min(&gap, &dp2, &mut dp1);
             dp1.min_mut(&sub);
-            let temp = dp1;
-            dp1 = dp2;
-            dp2 = temp;
+            std::mem::swap(&mut dp1, &mut dp2);
             dp2.adds_mut(&ones);
         }
 
@@ -439,17 +435,13 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
         // min of the cost of all three edit operations
         if trace_on {
             let args = T::triple_argmin(&sub, &dp2, &gap, &mut dp1);
-            let temp = dp1;
-            dp1 = dp2;
-            dp2 = temp;
+            std::mem::swap(&mut dp1, &mut dp2);
             dp2.adds_mut(&ones);
             traceback_arr.push(args);
         }else{
             T::min(&dp2, &gap, &mut dp1);
             dp1.min_mut(&sub);
-            let temp = dp1;
-            dp1 = dp2;
-            dp2 = temp;
+            std::mem::swap(&mut dp1, &mut dp2);
             dp2.adds_mut(&ones);
         }
     }
@@ -733,12 +725,8 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
 
         T::triple_min_length(&sub, &dp2, &haystack_gap, &sub_length,
                              &needle_gap_length, &haystack_gap_length, &mut dp1, &mut length1);
-        let mut temp = dp1;
-        dp1 = dp2;
-        dp2 = temp;
-        temp = length1;
-        length1 = length2;
-        length2 = temp;
+        std::mem::swap(&mut dp1, &mut dp2);
+        std::mem::swap(&mut length1, &mut length2);
         dp2.adds_mut(&ones);
 
         if i >= needle_len - 1 {

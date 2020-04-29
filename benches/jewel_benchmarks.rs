@@ -10,7 +10,7 @@ use core::arch::x86_64::*;
 
 fn bench_jewel_fn(c: &mut Criterion) {
     let mut group = c.benchmark_group("bench_jewel_fn");
-    let length = 30;
+    let length = 100;
 
     let mut a = unsafe {Avx1x32x8::repeating_max(black_box(length))};
     let b = unsafe {Avx1x32x8::repeating_max(black_box(length))};

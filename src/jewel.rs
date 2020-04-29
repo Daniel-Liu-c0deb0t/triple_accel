@@ -40,7 +40,6 @@ pub trait Jewel: fmt::Display {
 
     unsafe fn add_mut(&mut self, b: &Self);
     unsafe fn adds_mut(&mut self, b: &Self);
-    unsafe fn sub_mut(&mut self, b: &Self);
     unsafe fn and_mut(&mut self, b: &Self);
     unsafe fn cmpeq_mut(&mut self, b: &Self);
     unsafe fn min_mut(&mut self, b: &Self);
@@ -51,7 +50,6 @@ pub trait Jewel: fmt::Display {
     /// Overwrite a res vector to reduce memory allocations
     unsafe fn add(a: &Self, b: &Self, res: &mut Self);
     unsafe fn adds(a: &Self, b: &Self, res: &mut Self);
-    unsafe fn sub(a: &Self, b: &Self, res: &mut Self);
     unsafe fn and(a: &Self, b: &Self, res: &mut Self);
     unsafe fn cmpeq(a: &Self, b: &Self, res: &mut Self);
     unsafe fn min(a: &Self, b: &Self, res: &mut Self);
@@ -129,7 +127,7 @@ impl Jewel for AvxNx32x8 {
     #[target_feature(enable = "avx2")]
     #[inline]
     unsafe fn repeating_max(len: usize) -> AvxNx32x8 {
-        let v = vec![_mm256_set1_epi8(i8::max_value()); (len >> 5) + if (len & 31) > 0 {1} else {0}];
+        let v = vec![_mm256_set1_epi8(-1i8); (len >> 5) + if (len & 31) > 0 {1} else {0}];
 
         AvxNx32x8{
             v: v
@@ -242,7 +240,7 @@ impl Jewel for AvxNx32x8 {
     #[inline]
     unsafe fn insert_last_max(&mut self) {
         let last = self.v.len() - 1;
-        *self.v.get_unchecked_mut(last) = _mm256_insert_epi8(*self.v.get_unchecked(last), i8::max_value(), 31i32);
+        *self.v.get_unchecked_mut(last) = _mm256_insert_epi8(*self.v.get_unchecked(last), -1i8, 31i32);
     }
 
     #[target_feature(enable = "avx2")]
@@ -254,7 +252,7 @@ impl Jewel for AvxNx32x8 {
     #[target_feature(enable = "avx2")]
     #[inline]
     unsafe fn insert_first_max(&mut self) {
-        *self.v.get_unchecked_mut(0) = _mm256_insert_epi8(*self.v.get_unchecked(0), i8::max_value(), 0i32);
+        *self.v.get_unchecked_mut(0) = _mm256_insert_epi8(*self.v.get_unchecked(0), -1i8, 0i32);
     }
 
     #[target_feature(enable = "avx2")]
@@ -372,12 +370,11 @@ impl Jewel for AvxNx32x8 {
     }
 
     operation_mut_param2!("avx2", AvxNx32x8, add_mut, _mm256_add_epi8);
-    operation_mut_param2!("avx2", AvxNx32x8, adds_mut, _mm256_adds_epi8);
-    operation_mut_param2!("avx2", AvxNx32x8, sub_mut, _mm256_sub_epi8);
+    operation_mut_param2!("avx2", AvxNx32x8, adds_mut, _mm256_adds_epu8);
     operation_mut_param2!("avx2", AvxNx32x8, and_mut, _mm256_and_si256);
     operation_mut_param2!("avx2", AvxNx32x8, cmpeq_mut, _mm256_cmpeq_epi8);
-    operation_mut_param2!("avx2", AvxNx32x8, min_mut, _mm256_min_epi8);
-    operation_mut_param2!("avx2", AvxNx32x8, max_mut, _mm256_max_epi8);
+    operation_mut_param2!("avx2", AvxNx32x8, min_mut, _mm256_min_epu8);
+    operation_mut_param2!("avx2", AvxNx32x8, max_mut, _mm256_max_epu8);
 
     #[target_feature(enable = "avx2")]
     #[inline]
@@ -413,12 +410,11 @@ impl Jewel for AvxNx32x8 {
     }
 
     operation_param2!("avx2", AvxNx32x8, add, _mm256_add_epi8);
-    operation_param2!("avx2", AvxNx32x8, adds, _mm256_adds_epi8);
-    operation_param2!("avx2", AvxNx32x8, sub, _mm256_sub_epi8);
+    operation_param2!("avx2", AvxNx32x8, adds, _mm256_adds_epu8);
     operation_param2!("avx2", AvxNx32x8, and, _mm256_and_si256);
     operation_param2!("avx2", AvxNx32x8, cmpeq, _mm256_cmpeq_epi8);
-    operation_param2!("avx2", AvxNx32x8, min, _mm256_min_epi8);
-    operation_param2!("avx2", AvxNx32x8, max, _mm256_max_epi8);
+    operation_param2!("avx2", AvxNx32x8, min, _mm256_min_epu8);
+    operation_param2!("avx2", AvxNx32x8, max, _mm256_max_epu8);
 
     #[target_feature(enable = "avx2")]
     #[inline]
@@ -465,13 +461,13 @@ impl Jewel for AvxNx32x8 {
             let a_gap = *a_gap.v.get_unchecked(i);
             let b_gap = *b_gap.v.get_unchecked(i);
 
-            let res_min1 = _mm256_min_epi8(a_gap, b_gap);
-            // a gap: 1 - 0 = 1, b gap: 1 - -1 = 2
-            let res_arg1 = _mm256_sub_epi8(_mm256_set1_epi8(1), _mm256_cmpgt_epi8(a_gap, b_gap));
+            let res_min1 = _mm256_min_epu8(a_gap, b_gap);
+            // a gap: 2 + -1 = 1, b gap: 2 + 0 = 2
+            let res_arg1 = _mm256_add_epi8(_mm256_set1_epi8(2), _mm256_cmpeq_epi8(a_gap, res_min1));
 
-            let res_min2 = _mm256_min_epi8(sub, res_min1);
+            let res_min2 = _mm256_min_epu8(sub, res_min1);
             // sub: 0
-            let res_arg2 = _mm256_and_si256(_mm256_cmpgt_epi8(sub, res_min1), res_arg1);
+            let res_arg2 = _mm256_andnot_si256(res_arg1, _mm256_cmpeq_epi8(sub, res_min2));
 
             *res_min.v.get_unchecked_mut(i) = res_min2;
             v.push(res_arg2);
@@ -498,18 +494,18 @@ impl Jewel for AvxNx32x8 {
             let a_gap_length = *a_gap_length.v.get_unchecked(i);
             let b_gap_length = *b_gap_length.v.get_unchecked(i);
 
-            let res_min1 = _mm256_min_epi8(a_gap, b_gap);
-            let a_b_gt_mask = _mm256_cmpgt_epi8(a_gap, b_gap); // a gap: 0, b gap: -1
-            let mut res_length1 = _mm256_blendv_epi8(a_gap_length, b_gap_length, a_b_gt_mask); // lengths based on edits
+            let res_min1 = _mm256_min_epu8(a_gap, b_gap);
+            let a_b_gt_mask = _mm256_cmpeq_epi8(a_gap, res_min1); // a gap: -1, b gap: 0
+            let mut res_length1 = _mm256_blendv_epi8(b_gap_length, a_gap_length, a_b_gt_mask); // lengths based on edits
             let a_b_eq_mask = _mm256_cmpeq_epi8(a_gap, b_gap); // equal: -1
-            let a_b_max_len = _mm256_max_epi8(a_gap_length, b_gap_length);
+            let a_b_max_len = _mm256_max_epu8(a_gap_length, b_gap_length);
             res_length1 = _mm256_blendv_epi8(res_length1, a_b_max_len, a_b_eq_mask); // maximize length if edits equal
 
-            let res_min2 = _mm256_min_epi8(sub, res_min1);
-            let sub_gt_mask = _mm256_cmpgt_epi8(sub, res_min1); // sub: 0, prev a or b gap: -1
-            let mut res_length2 = _mm256_blendv_epi8(sub_length, res_length1, sub_gt_mask); // length based on edits
+            let res_min2 = _mm256_min_epu8(sub, res_min1);
+            let sub_gt_mask = _mm256_cmpeq_epi8(sub, res_min2); // sub: -1, prev a or b gap: 0
+            let mut res_length2 = _mm256_blendv_epi8(res_length1, sub_length, sub_gt_mask); // length based on edits
             let sub_eq_mask = _mm256_cmpeq_epi8(sub, res_min1);
-            let sub_max_len = _mm256_max_epi8(sub_length, res_length1);
+            let sub_max_len = _mm256_max_epu8(sub_length, res_length1);
             res_length2 = _mm256_blendv_epi8(res_length2, sub_max_len, sub_eq_mask); // maximize length if edits equal
 
             *res_min.v.get_unchecked_mut(i) = res_min2;
@@ -566,7 +562,7 @@ pub struct Avx1x32x8 {
 impl Jewel for Avx1x32x8 {
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn repeating(val: u32, len: usize) -> Avx1x32x8 {
+    unsafe fn repeating(val: u32, _len: usize) -> Avx1x32x8 {
         Avx1x32x8{
             v: _mm256_set1_epi8(val as i8)
         }
@@ -574,7 +570,7 @@ impl Jewel for Avx1x32x8 {
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn repeating_max(len: usize) -> Avx1x32x8 {
+    unsafe fn repeating_max(_len: usize) -> Avx1x32x8 {
         Avx1x32x8{
             v: _mm256_set1_epi8(i8::max_value())
         }
@@ -693,7 +689,6 @@ impl Jewel for Avx1x32x8 {
 
     single_operation_mut_param2!("avx2", Avx1x32x8, add_mut, _mm256_add_epi8);
     single_operation_mut_param2!("avx2", Avx1x32x8, adds_mut, _mm256_adds_epi8);
-    single_operation_mut_param2!("avx2", Avx1x32x8, sub_mut, _mm256_sub_epi8);
     single_operation_mut_param2!("avx2", Avx1x32x8, and_mut, _mm256_and_si256);
     single_operation_mut_param2!("avx2", Avx1x32x8, cmpeq_mut, _mm256_cmpeq_epi8);
     single_operation_mut_param2!("avx2", Avx1x32x8, min_mut, _mm256_min_epi8);
@@ -715,7 +710,6 @@ impl Jewel for Avx1x32x8 {
 
     single_operation_param2!("avx2", Avx1x32x8, add, _mm256_add_epi8);
     single_operation_param2!("avx2", Avx1x32x8, adds, _mm256_adds_epi8);
-    single_operation_param2!("avx2", Avx1x32x8, sub, _mm256_sub_epi8);
     single_operation_param2!("avx2", Avx1x32x8, and, _mm256_and_si256);
     single_operation_param2!("avx2", Avx1x32x8, cmpeq, _mm256_cmpeq_epi8);
     single_operation_param2!("avx2", Avx1x32x8, min, _mm256_min_epi8);
