@@ -56,6 +56,7 @@ pub trait Jewel: fmt::Display {
     unsafe fn max(a: &Self, b: &Self, res: &mut Self);
     unsafe fn shift_left_1(a: &Self, res: &mut Self);
     unsafe fn shift_right_1(a: &Self, res: &mut Self);
+    unsafe fn blendv(a: &Self, b: &Self, mask: &Self, res: &mut Self);
 
     unsafe fn triple_min_length(sub: &Self, a_gap: &Self, b_gap: &Self, sub_length: &Self,
                                 a_gap_length: &Self, b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self);
@@ -451,10 +452,20 @@ impl Jewel for AvxNx32x8 {
 
     #[target_feature(enable = "avx2")]
     #[inline]
+    unsafe fn blendv(a: &AvxNx32x8, b: &AvxNx32x8, mask: &AvxNx32x8, res: &mut AvxNx32x8) {
+        for i in 0..a.v.len() {
+            *res.v.get_unchecked_mut(i) = _mm256_blendv_epi8(
+                *a.v.get_unchecked(i), *b.v.get_unchecked(i), *mask.v.get_unchecked(i));
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn triple_argmin(sub: &AvxNx32x8, a_gap: &AvxNx32x8, b_gap: &AvxNx32x8, res_min: &mut AvxNx32x8) -> AvxNx32x8 {
         // return the edit used in addition to doing a min operation
         // hide latency by minimizing dependencies
         let mut v = Vec::with_capacity(sub.v.len());
+        let twos = _mm256_set1_epi8(2);
 
         for i in 0..sub.v.len() {
             let sub = *sub.v.get_unchecked(i);
@@ -463,7 +474,7 @@ impl Jewel for AvxNx32x8 {
 
             let res_min1 = _mm256_min_epu8(a_gap, b_gap);
             // a gap: 2 + -1 = 1, b gap: 2 + 0 = 2
-            let res_arg1 = _mm256_add_epi8(_mm256_set1_epi8(2), _mm256_cmpeq_epi8(a_gap, res_min1));
+            let res_arg1 = _mm256_add_epi8(twos, _mm256_cmpeq_epi8(a_gap, res_min1));
 
             let res_min2 = _mm256_min_epu8(sub, res_min1);
             // sub: 0
@@ -727,6 +738,12 @@ impl Jewel for Avx1x32x8 {
     unsafe fn shift_right_1(a: &Avx1x32x8, res: &mut Avx1x32x8) {
         // permute concatenates a vector of zeros and the first half of the first vector
         res.v = _mm256_alignr_epi8(a.v, _mm256_permute2x128_si256(a.v, a.v, 0b00001000i32), 15i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn blendv(a: &AvxNx32x8, b: &AvxNx32x8, mask: &AvxNx32x8, res: &mut AvxNx32x8) {
+        res.v = _mm256_blendv_epi8(a.v, b.v, mask.v);
     }
 
     #[target_feature(enable = "avx2")]

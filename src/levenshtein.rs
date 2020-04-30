@@ -2,6 +2,12 @@ use std;
 use super::*;
 use super::jewel::*;
 
+pub struct EditCost {
+    pub match_cost: u32,
+    pub mismatch_cost: u32,
+    pub gap_cost: u32
+}
+
 pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec<Edit>>) {
     let swap = a.len() > b.len(); // swap so that a len <= b len
     let a_new = if swap {b} else {a};
