@@ -45,10 +45,43 @@ fn bench_jewel_fn(c: &mut Criterion) {
     black_box(a);
     black_box(b);
 
-    let mut a = unsafe {_mm256_set1_epi8(127i8)};
-    let b = unsafe {_mm256_set1_epi8(127i8)};
+    let mut a = black_box(127i8);
+    let b = black_box(127i8);
 
-    group.bench_function("simd_create_adds_1", |bencher| bencher.iter(|| {
+    group.bench_function("regular_create_adds_1", |bencher| bencher.iter(|| {
+        unsafe {
+            a = a + b
+        }
+    }));
+
+    black_box(a);
+    black_box(b);
+
+    let mut a = black_box(127i8);
+    let b = black_box(127i8);
+
+    group.bench_function("regular_create_adds_10", |bencher| bencher.iter(|| {
+        unsafe {
+            a = a + b;
+			a = a + b;
+			a = a + b;
+			a = a + b;
+			a = a + b;
+			a = a + b;
+			a = a + b;
+			a = a + b;
+			a = a + b;
+			a = a + b
+        }
+    }));
+
+    black_box(a);
+    black_box(b);
+	
+	let mut a = black_box(unsafe {_mm256_set1_epi8(127i8)});
+    let b = black_box(unsafe {_mm256_set1_epi8(127i8)});
+
+    group.bench_function("avx_create_adds_1", |bencher| bencher.iter(|| {
         unsafe {
             a = _mm256_cmpeq_epi8(a, b);
         }
@@ -57,10 +90,10 @@ fn bench_jewel_fn(c: &mut Criterion) {
     black_box(a);
     black_box(b);
 
-    let mut a = unsafe {_mm256_set1_epi8(127i8)};
-    let b = unsafe {_mm256_set1_epi8(127i8)};
+    let mut a = black_box(unsafe {_mm256_set1_epi8(127i8)});
+    let b = black_box(unsafe {_mm256_set1_epi8(127i8)});
 
-    group.bench_function("simd_create_adds_10", |bencher| bencher.iter(|| {
+    group.bench_function("avx_create_adds_10", |bencher| bencher.iter(|| {
         unsafe {
             a = _mm256_cmpeq_epi8(a, b);
             a = _mm256_cmpeq_epi8(a, b);
@@ -72,6 +105,39 @@ fn bench_jewel_fn(c: &mut Criterion) {
             a = _mm256_cmpeq_epi8(a, b);
             a = _mm256_cmpeq_epi8(a, b);
             a = _mm256_cmpeq_epi8(a, b);
+        }
+    }));
+
+    black_box(a);
+    black_box(b);
+	
+	let mut a = black_box(unsafe {_mm_set1_epi8(127i8)});
+    let b = black_box(unsafe {_mm_set1_epi8(127i8)});
+
+    group.bench_function("sse_create_adds_1", |bencher| bencher.iter(|| {
+        unsafe {
+            a = _mm_cmpeq_epi8(a, b);
+        }
+    }));
+
+    black_box(a);
+    black_box(b);
+
+    let mut a = black_box(unsafe {_mm_set1_epi8(127i8)});
+    let b = black_box(unsafe {_mm_set1_epi8(127i8)});
+
+    group.bench_function("sse_create_adds_10", |bencher| bencher.iter(|| {
+        unsafe {
+            a = _mm_cmpeq_epi8(a, b);
+            a = _mm_cmpeq_epi8(a, b);
+            a = _mm_cmpeq_epi8(a, b);
+            a = _mm_cmpeq_epi8(a, b);
+            a = _mm_cmpeq_epi8(a, b);
+            a = _mm_cmpeq_epi8(a, b);
+            a = _mm_cmpeq_epi8(a, b);
+            a = _mm_cmpeq_epi8(a, b);
+            a = _mm_cmpeq_epi8(a, b);
+            a = _mm_cmpeq_epi8(a, b);
         }
     }));
 
