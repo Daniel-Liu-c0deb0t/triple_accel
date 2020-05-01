@@ -11,7 +11,7 @@ use core::arch::x86_64::*;
 /// To save space, most operations are modify in place.
 pub trait Jewel: fmt::Display {
     /// Functions for creating a Jewel vector.
-    unsafe fn repeating(val: u32, len: usize) -> Self;
+    unsafe fn repeating(val: i32, len: usize, unsigned: bool) -> Self;
     unsafe fn repeating_max(len: usize) -> Self;
     unsafe fn loadu(ptr: *const u8, len: usize) -> Self;
 
@@ -23,14 +23,14 @@ pub trait Jewel: fmt::Display {
     /// on long sequences of operations.
     unsafe fn slow_loadu(&mut self, idx: usize, ptr: *const u8, len: usize, reverse: bool);
 
-    unsafe fn slow_extract(&self, i: usize) -> u32;
-    unsafe fn slow_insert(&mut self, i: usize, val: u32);
+    unsafe fn slow_extract(&self, i: usize, unsigned: bool) -> i32;
+    unsafe fn slow_insert(&mut self, i: usize, val: i32, unsigned: bool);
     /// last_0 is the last element, last_1 is the second to last, etc.
-    unsafe fn insert_last_0(&mut self, val: u32);
+    unsafe fn insert_last_0(&mut self, val: u32, unsigned: bool);
     unsafe fn insert_last_1(&mut self, val: u32);
     unsafe fn insert_last_2(&mut self, val: u32);
     unsafe fn insert_last_max(&mut self);
-    unsafe fn insert_first(&mut self, val: u32);
+    unsafe fn insert_first(&mut self, val: u32, unsigned: bool);
     unsafe fn insert_first_max(&mut self);
 
     /// For speed, the `count_mismatches` functions do not require creating a Jewel vector.
@@ -46,6 +46,7 @@ pub trait Jewel: fmt::Display {
     unsafe fn max_mut(&mut self, b: &Self);
     unsafe fn shift_left_1_mut(&mut self);
     unsafe fn shift_right_1_mut(&mut self);
+    unsafe fn blendv_mut(&mut self, a: &Self, b: &Self);
 
     /// Overwrite a res vector to reduce memory allocations
     unsafe fn add(a: &Self, b: &Self, res: &mut Self);
@@ -56,7 +57,6 @@ pub trait Jewel: fmt::Display {
     unsafe fn max(a: &Self, b: &Self, res: &mut Self);
     unsafe fn shift_left_1(a: &Self, res: &mut Self);
     unsafe fn shift_right_1(a: &Self, res: &mut Self);
-    unsafe fn blendv(a: &Self, b: &Self, mask: &Self, res: &mut Self);
 
     unsafe fn triple_min_length(sub: &Self, a_gap: &Self, b_gap: &Self, sub_length: &Self,
                                 a_gap_length: &Self, b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self);
@@ -117,8 +117,9 @@ pub struct AvxNx32x8 {
 impl Jewel for AvxNx32x8 {
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn repeating(val: u32, len: usize) -> AvxNx32x8 {
-        let v = vec![_mm256_set1_epi8(val as i8); (len >> 5) + if (len & 31) > 0 {1} else {0}];
+    unsafe fn repeating(val: i32, len: usize, unsigned: bool) -> AvxNx32x8 {
+        let val_i8 = (val + if unsigned {i8::min_value() as i32} else {0i32}) as i8;
+        let v = vec![_mm256_set1_epi8(val_i8); (len >> 5) + if (len & 31) > 0 {1} else {0}];
 
         AvxNx32x8{
             v: v
@@ -128,7 +129,7 @@ impl Jewel for AvxNx32x8 {
     #[target_feature(enable = "avx2")]
     #[inline]
     unsafe fn repeating_max(len: usize) -> AvxNx32x8 {
-        let v = vec![_mm256_set1_epi8(-1i8); (len >> 5) + if (len & 31) > 0 {1} else {0}];
+        let v = vec![_mm256_set1_epi8(i8::max_value()); (len >> 5) + if (len & 31) > 0 {1} else {0}];
 
         AvxNx32x8{
             v: v
@@ -196,31 +197,32 @@ impl Jewel for AvxNx32x8 {
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn slow_extract(&self, i: usize) -> u32 {
+    unsafe fn slow_extract(&self, i: usize, unsigned: bool) -> i32 {
         let idx = i >> 5;
         let j = i & 31;
-        let mut arr = [0u8; 32];
+        let mut arr = [0i8; 32];
         _mm256_storeu_si256(arr.as_mut_ptr() as *mut __m256i, *self.v.get_unchecked(idx));
-        *arr.get_unchecked(j) as u32
+        (*arr.get_unchecked(j) as i32) - if unsigned {i8::min_value() as i32} else {0i32}
     }
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn slow_insert(&mut self, i: usize, val: u32) {
+    unsafe fn slow_insert(&mut self, i: usize, val: i32) {
         let idx = i >> 5;
         let j = i & 31;
-        let mut arr = [0u8; 32];
+        let mut arr = [0i8; 32];
         let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
         _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(idx));
-        *arr.get_unchecked_mut(j) = val as u8;
+        *arr.get_unchecked_mut(j) = (val + if unsigned {i8::min_value() as i32} else {0i32}) as i8;
         *self.v.get_unchecked_mut(idx) = _mm256_loadu_si256(arr_ptr);
     }
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn insert_last_0(&mut self, val: u32) {
+    unsafe fn insert_last_0(&mut self, val: u32, unsigned: bool) {
         let last = self.v.len() - 1;
-        *self.v.get_unchecked_mut(last) = _mm256_insert_epi8(*self.v.get_unchecked(last), val as i8, 31i32);
+        let val_i8 = (val as i8) + if unsigned {i8::min_value()} else {0i8};
+        *self.v.get_unchecked_mut(last) = _mm256_insert_epi8(*self.v.get_unchecked(last), val_i8, 31i32);
     }
 
     #[target_feature(enable = "avx2")]
@@ -241,19 +243,20 @@ impl Jewel for AvxNx32x8 {
     #[inline]
     unsafe fn insert_last_max(&mut self) {
         let last = self.v.len() - 1;
-        *self.v.get_unchecked_mut(last) = _mm256_insert_epi8(*self.v.get_unchecked(last), -1i8, 31i32);
+        *self.v.get_unchecked_mut(last) = _mm256_insert_epi8(*self.v.get_unchecked(last), i8::max_value(), 31i32);
     }
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn insert_first(&mut self, val: u32) {
-        *self.v.get_unchecked_mut(0) = _mm256_insert_epi8(*self.v.get_unchecked(0), val as i8, 0i32);
+    unsafe fn insert_first(&mut self, val: u32, unsigned: bool) {
+        let val_i8 = (val as i8) + if unsigned {i8::min_value()} else {0i8};
+        *self.v.get_unchecked_mut(0) = _mm256_insert_epi8(*self.v.get_unchecked(0), val_i8, 0i32);
     }
 
     #[target_feature(enable = "avx2")]
     #[inline]
     unsafe fn insert_first_max(&mut self) {
-        *self.v.get_unchecked_mut(0) = _mm256_insert_epi8(*self.v.get_unchecked(0), -1i8, 0i32);
+        *self.v.get_unchecked_mut(0) = _mm256_insert_epi8(*self.v.get_unchecked(0), i8::max_value(), 0i32);
     }
 
     #[target_feature(enable = "avx2")]
@@ -371,11 +374,11 @@ impl Jewel for AvxNx32x8 {
     }
 
     operation_mut_param2!("avx2", AvxNx32x8, add_mut, _mm256_add_epi8);
-    operation_mut_param2!("avx2", AvxNx32x8, adds_mut, _mm256_adds_epu8);
+    operation_mut_param2!("avx2", AvxNx32x8, adds_mut, _mm256_adds_epi8);
     operation_mut_param2!("avx2", AvxNx32x8, and_mut, _mm256_and_si256);
     operation_mut_param2!("avx2", AvxNx32x8, cmpeq_mut, _mm256_cmpeq_epi8);
-    operation_mut_param2!("avx2", AvxNx32x8, min_mut, _mm256_min_epu8);
-    operation_mut_param2!("avx2", AvxNx32x8, max_mut, _mm256_max_epu8);
+    operation_mut_param2!("avx2", AvxNx32x8, min_mut, _mm256_min_epi8);
+    operation_mut_param2!("avx2", AvxNx32x8, max_mut, _mm256_max_epi8);
 
     #[target_feature(enable = "avx2")]
     #[inline]
@@ -410,12 +413,21 @@ impl Jewel for AvxNx32x8 {
         *self.v.get_unchecked_mut(0) = _mm256_alignr_epi8(curr, _mm256_permute2x128_si256(curr, curr, 0b00001000i32), 15i32);
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn blendv_mut(&mut self, a: &AvxNx32x8, b: &AvxNx32x8) {
+        for i in 0..a.v.len() {
+            *self.v.get_unchecked_mut(i) = _mm256_blendv_epi8(
+                *a.v.get_unchecked(i), *b.v.get_unchecked(i), *self.v.get_unchecked(i));
+        }
+    }
+
     operation_param2!("avx2", AvxNx32x8, add, _mm256_add_epi8);
-    operation_param2!("avx2", AvxNx32x8, adds, _mm256_adds_epu8);
+    operation_param2!("avx2", AvxNx32x8, adds, _mm256_adds_epi8);
     operation_param2!("avx2", AvxNx32x8, and, _mm256_and_si256);
     operation_param2!("avx2", AvxNx32x8, cmpeq, _mm256_cmpeq_epi8);
-    operation_param2!("avx2", AvxNx32x8, min, _mm256_min_epu8);
-    operation_param2!("avx2", AvxNx32x8, max, _mm256_max_epu8);
+    operation_param2!("avx2", AvxNx32x8, min, _mm256_min_epi8);
+    operation_param2!("avx2", AvxNx32x8, max, _mm256_max_epi8);
 
     #[target_feature(enable = "avx2")]
     #[inline]
@@ -452,33 +464,24 @@ impl Jewel for AvxNx32x8 {
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn blendv(a: &AvxNx32x8, b: &AvxNx32x8, mask: &AvxNx32x8, res: &mut AvxNx32x8) {
-        for i in 0..a.v.len() {
-            *res.v.get_unchecked_mut(i) = _mm256_blendv_epi8(
-                *a.v.get_unchecked(i), *b.v.get_unchecked(i), *mask.v.get_unchecked(i));
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
     unsafe fn triple_argmin(sub: &AvxNx32x8, a_gap: &AvxNx32x8, b_gap: &AvxNx32x8, res_min: &mut AvxNx32x8) -> AvxNx32x8 {
         // return the edit used in addition to doing a min operation
         // hide latency by minimizing dependencies
         let mut v = Vec::with_capacity(sub.v.len());
-        let twos = _mm256_set1_epi8(2);
+        let ones = _mm256_set1_epi8(1);
 
         for i in 0..sub.v.len() {
             let sub = *sub.v.get_unchecked(i);
             let a_gap = *a_gap.v.get_unchecked(i);
             let b_gap = *b_gap.v.get_unchecked(i);
 
-            let res_min1 = _mm256_min_epu8(a_gap, b_gap);
-            // a gap: 2 + -1 = 1, b gap: 2 + 0 = 2
-            let res_arg1 = _mm256_add_epi8(twos, _mm256_cmpeq_epi8(a_gap, res_min1));
+            let res_min1 = _mm256_min_epi8(a_gap, b_gap);
+            // a gap: 1 - 0 = 1, b gap: 1 - -1 = 2
+            let res_arg1 = _mm256_sub_epi8(ones, _mm256_cmpgt_epi8(a_gap, b_gap));
 
-            let res_min2 = _mm256_min_epu8(sub, res_min1);
+            let res_min2 = _mm256_min_epi8(sub, res_min1);
             // sub: 0
-            let res_arg2 = _mm256_andnot_si256(res_arg1, _mm256_cmpeq_epi8(sub, res_min2));
+            let res_arg2 = _mm256_and_si256(res_arg1, _mm256_cmpgt_epi8(sub, res_min1));
 
             *res_min.v.get_unchecked_mut(i) = res_min2;
             v.push(res_arg2);
@@ -505,18 +508,18 @@ impl Jewel for AvxNx32x8 {
             let a_gap_length = *a_gap_length.v.get_unchecked(i);
             let b_gap_length = *b_gap_length.v.get_unchecked(i);
 
-            let res_min1 = _mm256_min_epu8(a_gap, b_gap);
-            let a_b_gt_mask = _mm256_cmpeq_epi8(a_gap, res_min1); // a gap: -1, b gap: 0
-            let mut res_length1 = _mm256_blendv_epi8(b_gap_length, a_gap_length, a_b_gt_mask); // lengths based on edits
+            let res_min1 = _mm256_min_epi8(a_gap, b_gap);
+            let a_b_gt_mask = _mm256_cmpgt_epi8(a_gap, b_gap); // a gap: 0, b gap: -1
+            let mut res_length1 = _mm256_blendv_epi8(a_gap_length, b_gap_length, a_b_gt_mask); // lengths based on edits
             let a_b_eq_mask = _mm256_cmpeq_epi8(a_gap, b_gap); // equal: -1
-            let a_b_max_len = _mm256_max_epu8(a_gap_length, b_gap_length);
+            let a_b_max_len = _mm256_max_epi8(a_gap_length, b_gap_length);
             res_length1 = _mm256_blendv_epi8(res_length1, a_b_max_len, a_b_eq_mask); // maximize length if edits equal
 
-            let res_min2 = _mm256_min_epu8(sub, res_min1);
-            let sub_gt_mask = _mm256_cmpeq_epi8(sub, res_min2); // sub: -1, prev a or b gap: 0
-            let mut res_length2 = _mm256_blendv_epi8(res_length1, sub_length, sub_gt_mask); // length based on edits
+            let res_min2 = _mm256_min_epi8(sub, res_min1);
+            let sub_gt_mask = _mm256_cmpgt_epi8(sub, res_min1); // sub: -1, prev a or b gap: 0
+            let mut res_length2 = _mm256_blendv_epi8(sub_length, res_length1, sub_gt_mask); // length based on edits
             let sub_eq_mask = _mm256_cmpeq_epi8(sub, res_min1);
-            let sub_max_len = _mm256_max_epu8(sub_length, res_length1);
+            let sub_max_len = _mm256_max_epi8(sub_length, res_length1);
             res_length2 = _mm256_blendv_epi8(res_length2, sub_max_len, sub_eq_mask); // maximize length if edits equal
 
             *res_min.v.get_unchecked_mut(i) = res_min2;
@@ -573,9 +576,9 @@ pub struct Avx1x32x8 {
 impl Jewel for Avx1x32x8 {
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn repeating(val: u32, _len: usize) -> Avx1x32x8 {
+    unsafe fn repeating(val: i32, _len: usize, unsigned: bool) -> Avx1x32x8 {
         Avx1x32x8{
-            v: _mm256_set1_epi8(val as i8)
+            v: _mm256_set1_epi8((val + if unsigned {i8::min_value() as i32} else {0i8}) as i8)
         }
     }
 
@@ -628,26 +631,26 @@ impl Jewel for Avx1x32x8 {
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn slow_extract(&self, i: usize) -> u32 {
-        let mut arr = [0u8; 32];
+    unsafe fn slow_extract(&self, i: usize, unsigned: bool) -> i32 {
+        let mut arr = [0i8; 32];
         _mm256_storeu_si256(arr.as_mut_ptr() as *mut __m256i, self.v);
-        *arr.get_unchecked(i) as u32
+        (*arr.get_unchecked(i) as i32) - if unsigned {i8::min_value() as i32} else {0i32}
     }
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn slow_insert(&mut self, i: usize, val: u32) {
-        let mut arr = [0u8; 32];
+    unsafe fn slow_insert(&mut self, i: usize, val: i32, unsigned: bool) {
+        let mut arr = [0i8; 32];
         let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
         _mm256_storeu_si256(arr_ptr, self.v);
-        *arr.get_unchecked_mut(i) = val as u8;
+        *arr.get_unchecked_mut(i) = (val + if unsigned {i8::min_value() as i32} else {0i32}) as i8;
         self.v = _mm256_loadu_si256(arr_ptr);
     }
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn insert_last_0(&mut self, val: u32) {
-        self.v = _mm256_insert_epi8(self.v, val as i8, 31i32);
+    unsafe fn insert_last_0(&mut self, val: u32, unsigned: bool) {
+        self.v = _mm256_insert_epi8(self.v, (val as i8) + if unsigned {i8::min_value()} else {0i8}, 31i32);
     }
 
     #[target_feature(enable = "avx2")]
@@ -670,8 +673,8 @@ impl Jewel for Avx1x32x8 {
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn insert_first(&mut self, val: u32) {
-        self.v = _mm256_insert_epi8(self.v, val as i8, 0i32);
+    unsafe fn insert_first(&mut self, val: u32, unsigned: bool) {
+        self.v = _mm256_insert_epi8(self.v, (val as i8) + if unsigned {i8::min_value()} else {0i8}, 0i32);
     }
 
     #[target_feature(enable = "avx2")]
@@ -719,6 +722,12 @@ impl Jewel for Avx1x32x8 {
         self.v = _mm256_alignr_epi8(self.v, _mm256_permute2x128_si256(self.v, self.v, 0b00001000i32), 15i32);
     }
 
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn blendv_mut(&mut self, a: &AvxNx32x8, b: &AvxNx32x8) {
+        self.v = _mm256_blendv_epi8(a.v, b.v, self.v);
+    }
+
     single_operation_param2!("avx2", Avx1x32x8, add, _mm256_add_epi8);
     single_operation_param2!("avx2", Avx1x32x8, adds, _mm256_adds_epi8);
     single_operation_param2!("avx2", Avx1x32x8, and, _mm256_and_si256);
@@ -738,12 +747,6 @@ impl Jewel for Avx1x32x8 {
     unsafe fn shift_right_1(a: &Avx1x32x8, res: &mut Avx1x32x8) {
         // permute concatenates a vector of zeros and the first half of the first vector
         res.v = _mm256_alignr_epi8(a.v, _mm256_permute2x128_si256(a.v, a.v, 0b00001000i32), 15i32);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn blendv(a: &AvxNx32x8, b: &AvxNx32x8, mask: &AvxNx32x8, res: &mut AvxNx32x8) {
-        res.v = _mm256_blendv_epi8(a.v, b.v, mask.v);
     }
 
     #[target_feature(enable = "avx2")]

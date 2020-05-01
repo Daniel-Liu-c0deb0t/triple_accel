@@ -2,10 +2,11 @@ use std;
 use super::*;
 use super::jewel::*;
 
-pub struct EditCost {
+pub struct EditCosts {
     pub match_cost: u32,
     pub mismatch_cost: u32,
-    pub gap_cost: u32
+    pub gap_cost: u32,
+    pub unsigned: bool
 }
 
 pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec<Edit>>) {
@@ -232,9 +233,9 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> Option
     Some((dp1[hi - lo - 1], Some(res)))
 }
 
-pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> Option<(u32, Option<Vec<Edit>>)> {
+pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: i32, trace_on: bool) -> Option<(i32, Option<Vec<Edit>>)> {
     if a.len() == 0 && b.len() == 0 {
-        return if trace_on {Some((0u32, Some(vec![])))} else {Some((0u32, None))};
+        return if trace_on {Some((0i32, Some(vec![])))} else {Some((0i32, None))};
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -251,7 +252,7 @@ pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> Option<
     levenshtein_naive_k(a, b, k, trace_on)
 }
 
-unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, trace_on: bool) -> Option<(u32, Option<Vec<Edit>>)> {
+unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: i32, trace_on: bool, costs: EditCosts) -> Option<(i32, Option<Vec<Edit>>)> {
     // swap a and b so that a is shorter than b, if applicable
     // makes operations later on slightly easier, since length of a <= length of b
     let swap = a_old.len() > b_old.len();
@@ -278,33 +279,30 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
     let k2_div2 = k2 >> 1;
 
     // set dp[0][0] = 0
-    dp1.slow_insert(k1_div2, 0);
+    dp1.slow_insert(k1_div2, 0, costs.unsigned);
     // set dp[0][1] = 1 and dp[1][0] = 1
-    dp2.slow_insert(k2_div2 - 1, 1);
-    dp2.slow_insert(k2_div2, 1);
+    dp2.slow_insert(k2_div2 - 1, costs.gap_cost, costs.unsigned);
+    dp2.slow_insert(k2_div2, costs.gap_cost, costs.unsigned);
 
     // a_k1_window and a_k2_window represent reversed portions of the string a
     // copy in half of k1/k2 number of characters
     // these characters are placed in the second half of b windows
     // since a windows are reversed, the characters are placed in reverse in the first half of b windows
-    let mut a_k1_window = T::repeating(0, max_len);
+    let mut a_k1_window = T::repeating(0, max_len, false);
     a_k1_window.slow_loadu(k1_div2 - 1, a.as_ptr(), std::cmp::min(k1_div2, a_len), true);
 
-    let mut b_k1_window = T::repeating(0, max_len);
+    let mut b_k1_window = T::repeating(0, max_len, false);
     b_k1_window.slow_loadu(k1_div2 + 1, b.as_ptr(), std::cmp::min(k1_div2, b_len), false);
 
-    let mut a_k2_window = T::repeating(0, max_len);
+    let mut a_k2_window = T::repeating(0, max_len, false);
     a_k2_window.slow_loadu(k2_div2 - 1, a.as_ptr(), std::cmp::min(k2_div2, a_len), true);
 
-    let mut b_k2_window = T::repeating(0, max_len);
+    let mut b_k2_window = T::repeating(0, max_len, false);
     b_k2_window.slow_loadu(k2_div2, b.as_ptr(), std::cmp::min(k2_div2, b_len), false);
 
     // used to keep track of the next characters to place in the windows
     let mut k1_idx = k1_div2 - 1;
     let mut k2_idx = k2_div2 - 1;
-
-    // reusable constants
-    let ones = T::repeating(1, max_len);
 
     let len_diff = b_len - a_len;
     let len = a_len + b_len + 1;
@@ -323,14 +321,19 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
     let mut traceback_arr = if trace_on {Vec::with_capacity(len + (len & 1))} else {vec![]};
 
     if trace_on {
-        traceback_arr.push(T::repeating(0, max_len));
-        traceback_arr.push(T::repeating(0, max_len));
-        traceback_arr.get_unchecked_mut(1).slow_insert(k2_div2 - 1, 2);
-        traceback_arr.get_unchecked_mut(1).slow_insert(k2_div2, 1);
+        traceback_arr.push(T::repeating(0, max_len, false));
+        traceback_arr.push(T::repeating(0, max_len, false));
+        traceback_arr.get_unchecked_mut(1).slow_insert(k2_div2 - 1, 2, false);
+        traceback_arr.get_unchecked_mut(1).slow_insert(k2_div2, 1, false);
     }
 
-    let mut sub = T::repeating(0, max_len);
-    let mut gap = T::repeating(0, max_len);
+    let mut sub = T::repeating(0, max_len, false);
+    let mut a_gap = T::repeating(0, max_len, false);
+    let mut b_gap = T::repeating(0, max_len, false);
+
+    let match_cost = T::repeating(costs.match_cost, max_len, false);
+    let mismatch_cost = T::repeating(costs.mismatch_cost, max_len, false);
+    let gap_cost = T::repeating(costs.gap_cost, max_len, false);
 
     // example: allow k = 2 edits for two strings of length 3
     //      -b--   
@@ -386,7 +389,7 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
         a_k1_window.shift_right_1_mut();
 
         if k1_idx < a_len {
-            a_k1_window.insert_first(*a.get_unchecked(k1_idx) as u32);
+            a_k1_window.insert_first(*a.get_unchecked(k1_idx) as u32, false);
         }
 
         b_k1_window.shift_left_1_mut();
@@ -398,7 +401,7 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
         a_k2_window.shift_right_1_mut();
 
         if k2_idx < a_len {
-            a_k2_window.insert_first(*a.get_unchecked(k2_idx) as u32);
+            a_k2_window.insert_first(*a.get_unchecked(k2_idx) as u32, false);
         }
 
         b_k2_window.shift_left_1_mut();
@@ -409,50 +412,54 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
 
         // (anti) diagonal that matches in the a and b windows
         T::cmpeq(&a_k1_window, &b_k1_window, &mut sub);
-        // add negative ones to cells that have matching characters from a and b
+        sub.blendv_mut(&mismatch_cost, &match_cost);
         sub.adds_mut(&dp1);
         // cost of gaps in a
-        T::shift_right_1(&dp2, &mut gap);
-        gap.insert_first_max();
-        // cost of gaps in b: dp2
+        T::shift_right_1(&dp2, &mut a_gap);
+        a_gap.insert_first_max();
+        a_gap.adds_mut(&gap_cost);
+        // cost of gaps in b
+        T::adds(&dp2, &gap_cost, &mut b_gap);
 
         // min of the cost of all three edit operations
         if trace_on {
-            let args = T::triple_argmin(&sub, &gap, &dp2, &mut dp1);
+            let args = T::triple_argmin(&sub, &a_gap, &b_gap, &mut dp1);
             std::mem::swap(&mut dp1, &mut dp2);
-            dp2.adds_mut(&ones);
             traceback_arr.push(args);
         }else{
-            T::min(&gap, &dp2, &mut dp1);
+            T::min(&a_gap, &b_gap, &mut dp1);
             dp1.min_mut(&sub);
             std::mem::swap(&mut dp1, &mut dp2);
-            dp2.adds_mut(&ones);
         }
 
         // (anti) diagonal that matches in the a and b windows
         T::cmpeq(&a_k2_window, &b_k2_window, &mut sub);
-        // add negative ones to cells that have matching characters from a and b
+        sub.blendv_mut(&mismatch_cost, &match_cost);
         sub.adds_mut(&dp1);
         // cost of gaps in b
-        T::shift_left_1(&dp2, &mut gap);
-        gap.insert_last_max(); // k1, shift in max value
-        // cost of gaps in a: dp2
+        T::shift_left_1(&dp2, &mut b_gap);
+        b_gap.insert_last_max(); // k1, shift in max value
+        b_gap.adds_mut(&gap_cost);
+        // cost of gaps in a
+        T::adds(&dp2, &gap_cost, &mut a_gap);
 
         // min of the cost of all three edit operations
         if trace_on {
-            let args = T::triple_argmin(&sub, &dp2, &gap, &mut dp1);
+            let args = T::triple_argmin(&sub, &a_gap, &b_gap, &mut dp1);
             std::mem::swap(&mut dp1, &mut dp2);
-            dp2.adds_mut(&ones);
             traceback_arr.push(args);
         }else{
-            T::min(&dp2, &gap, &mut dp1);
+            T::min(&a_gap, &b_gap, &mut dp1);
             dp1.min_mut(&sub);
             std::mem::swap(&mut dp1, &mut dp2);
-            dp2.adds_mut(&ones);
         }
     }
 
-    let final_res = if ends_with_k2 {dp2.slow_extract(final_idx)} else {dp1.slow_extract(final_idx)};
+    let final_res = if ends_with_k2 {
+        dp2.slow_extract(final_idx, costs.unsigned)
+    }else{
+        dp1.slow_extract(final_idx, costs.unsigned)
+    };
 
     if final_res > k {
         return None;
@@ -627,17 +634,17 @@ pub fn levenshtein_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     {
         if is_x86_feature_detected!("avx2") {
             if needle.len() <= 32 {
-                return unsafe {levenshtein_search_simd_core::<Avx1x32x8>(needle, haystack, needle.len() as u32, true)};
+                return unsafe {levenshtein_search_simd_core::<Avx1x32x8>(needle, haystack, needle.len() as i32, true)};
             }else{
-                return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, needle.len() as u32, true)};
+                return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, needle.len() as i32, true)};
             }
         }
     }
 
-    levenshtein_search_naive_k(needle, haystack, needle.len() as u32, true)
+    levenshtein_search_naive_k(needle, haystack, needle.len() as i32, true)
 }
 
-pub fn levenshtein_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
+pub fn levenshtein_search_simd_k(needle: &[u8], haystack: &[u8], k: i32, best: bool) -> Vec<Match> {
     if needle.len() == 0 {
         return vec![];
     }
@@ -656,18 +663,18 @@ pub fn levenshtein_search_simd_k(needle: &[u8], haystack: &[u8], k: u32, best: b
     levenshtein_search_naive_k(needle, haystack, k, best)
 }
 
-unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
+unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: i32, best: bool, costs: EditCosts) -> Vec<Match> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
     let mut dp1 = T::repeating_max(needle_len);
     let mut dp2 = T::repeating_max(needle_len);
-    dp2.insert_last_0(1); // last cell
+    dp2.slow_insert(dp2.upper_bound() - 1, costs.gap_cost, costs.unsigned); // last cell
 
     // save length instead of start idx due to int size constraints
-    let mut length1 = T::repeating(0, needle_len);
-    let mut length2 = T::repeating(0, needle_len);
+    let mut length1 = T::repeating(0, needle_len, true);
+    let mut length2 = T::repeating(0, needle_len, true);
 
-    let ones = T::repeating(1, needle_len);
+    let ones = T::repeating(1, needle_len, false);
 
     let len = haystack_len + needle_len;
     let final_idx = dp1.upper_bound() - needle_len;
@@ -675,19 +682,19 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
     let mut res = Vec::with_capacity(haystack_len >> 2);
 
     // load needle characters into needle_window in reversed order
-    let mut needle_window = T::repeating(0, needle_len);
+    let mut needle_window = T::repeating(0, needle_len, false);
     needle_window.slow_loadu(needle_window.upper_bound() - 1, needle.as_ptr(), needle_len, true);
 
-    let mut haystack_window = T::repeating(0, needle_len);
+    let mut haystack_window = T::repeating(0, needle_len, false);
     let mut haystack_idx = 0usize;
     let mut curr_k = k;
 
-    let mut match_mask = T::repeating(0, needle_len);
-    let mut sub = T::repeating(0, needle_len);
-    let mut sub_length = T::repeating(0, needle_len);
-    let mut needle_gap_length = T::repeating(0, needle_len);
-    let mut haystack_gap = T::repeating(0, needle_len);
-    let mut haystack_gap_length = T::repeating(0, needle_len);
+    let mut match_mask = T::repeating(0, needle_len, false);
+    let mut sub = T::repeating(0, needle_len, false);
+    let mut sub_length = T::repeating(0, needle_len, false);
+    let mut needle_gap_length = T::repeating(0, needle_len, false);
+    let mut haystack_gap = T::repeating(0, needle_len, false);
+    let mut haystack_gap_length = T::repeating(0, needle_len, false);
 
     //       ..i...
     //       --h---
@@ -708,36 +715,50 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
         haystack_window.shift_left_1_mut();
 
         if haystack_idx < haystack_len {
-            haystack_window.insert_last_0(*haystack.get_unchecked(haystack_idx) as u32);
+            haystack_window.insert_last_0(*haystack.get_unchecked(haystack_idx) as u32, false);
             haystack_idx += 1;
         }
 
         T::cmpeq(&needle_window, &haystack_window, &mut match_mask);
+        match_mask.blendv(&mismatch_cost, &match_cost);
 
         // match/mismatch
-        T::shift_left_1(&dp1, &mut sub); // zeros are shifted in
-        sub.add_mut(&match_mask); // add -1 if match
+        T::shift_left_1(&dp1, &mut sub);
+
+        if costs.unsigned {
+            sub.insert_last_0(0, true);
+        } // otherwise, zeros are shifted in
+
+        sub.adds_mut(&match_mask);
 
         T::shift_left_1(&length1, &mut sub_length);
+        sub_length.insert_last_0(0, true);
         sub_length.add_mut(&ones);
 
-        // gap in needle: dp2
+        // gap in needle
+        T::adds(&dp2, &gap_cost, &mut needle_gap);
         T::add(&length2, &ones, &mut needle_gap_length);
 
         // gap in haystack
-        T::shift_left_1(&dp2, &mut haystack_gap); // zeros are shifted in
+        T::shift_left_1(&dp2, &mut haystack_gap);
+
+        if costs.unsigned {
+            haystack_gap.insert_last_0(0, true);
+        } // otherwise, zeros are shifted in
+
+        haystack_gap.adds_mut(&gap_cost);
 
         T::shift_left_1(&length2, &mut haystack_gap_length);
+        haystack_gap_length.insert_last_0(0, true);
 
-        T::triple_min_length(&sub, &dp2, &haystack_gap, &sub_length,
+        T::triple_min_length(&sub, &needle_gap, &haystack_gap, &sub_length,
                              &needle_gap_length, &haystack_gap_length, &mut dp1, &mut length1);
         std::mem::swap(&mut dp1, &mut dp2);
         std::mem::swap(&mut length1, &mut length2);
-        dp2.adds_mut(&ones);
 
         if i >= needle_len - 1 {
-            let final_res = dp2.slow_extract(final_idx);
-            let final_length = length2.slow_extract(final_idx) as usize;
+            let final_res = dp2.slow_extract(final_idx, costs.unsigned);
+            let final_length = length2.slow_extract(final_idx, costs.unsigned) as usize;
 
             if final_res <= curr_k {
                 let end_idx = i + 1 - needle_len;
@@ -756,41 +777,4 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
 
     res
 }
-/*
-unsafe fn triple_argmin<T: Jewel>(sub: &T, a_gap: &T, b_gap: &T, ones: &T) -> (T, T) {
-    // return the edit used in addition to doing a min operation
-    // hide latency by minimizing dependencies
-    let res_min = T::min(a_gap, b_gap);
-    let mut res_arg = T::cmpgt(a_gap, b_gap);
-    res_arg.neg_add(&ones); // a gap: 1 - 0 = 1, b gap: 1 - -1 = 2
 
-    let res_min2 = T::min(sub, &res_min);
-    let mut res_arg2 = T::cmpgt(sub, &res_min);
-    res_arg2.and(&res_arg); // sub: 0
-
-    (res_min2, res_arg2)
-}
-
-unsafe fn triple_min_length<T: Jewel>(sub: &T, a_gap: &T, b_gap: &T, sub_length: &T, a_gap_length: &T, b_gap_length: &T) -> (T, T) {
-    // choose the length based on which edit is chosen during the min operation
-    // hide latency by minimizing dependencies
-    // secondary objective of maximizing length if edit costs equal
-    let res_min = T::min(a_gap, b_gap);
-    let mut res_length = T::cmpgt(a_gap, b_gap); // a gap: 0, b gap: -1
-    res_length.blendv(a_gap_length, b_gap_length); // lengths based on edits
-    let mut a_b_eq_mask = T::cmpeq(a_gap, b_gap); // equal: -1
-    let a_b_max_len = T::max(a_gap_length, b_gap_length);
-    a_b_eq_mask.blendv(&res_length, &a_b_max_len); // maximize length if edits equal
-    res_length = a_b_eq_mask;
-
-    let res_min2 = T::min(sub, &res_min);
-    let mut res_length2 = T::cmpgt(sub, &res_min); // sub: 0, prev a or b gap: -1
-    res_length2.blendv(sub_length, &res_length); // length based on edits
-    let mut sub_eq_mask = T::cmpeq(sub, &res_min);
-    let sub_max_len = T::max(sub_length, &res_length);
-    sub_eq_mask.blendv(&res_length2, &sub_max_len);
-    res_length2 = sub_eq_mask;
-
-    (res_min2, res_length2)
-}
-*/
