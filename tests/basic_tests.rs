@@ -326,25 +326,25 @@ fn test_trace_on_levenshtein_simd_k() {
 fn test_basic_levenshtein_search_naive() {
     let a1 = b"bcc";
     let b1 = b"abcde";
-    let k1 = 1u32;
+    let k1 = 1;
     let mut res = levenshtein_search_naive_k(a1, b1, k1, false);
     assert!(res == vec![Match{start: 1, end: 3, k: 1}, Match{start: 1, end: 4, k: 1}]);
 
     let a2 = b"";
     let b2 = b"";
-    let k2 = 1u32;
+    let k2 = 1;
     res = levenshtein_search_naive_k(a2, b2, k2, false);
     assert!(res == vec![]);
 
     let a3 = b"tast";
     let b3 = b"testing 123 tating!";
-    let k3 = 1u32;
+    let k3 = 1;
     res = levenshtein_search_naive_k(a3, b3, k3, false);
     assert!(res == vec![Match{start: 0, end: 4, k: 1}, Match{start: 12, end: 15, k: 1}]);
 
     let a4 = b"tst";
     let b4 = b"testing 123 tasting!";
-    let k4 = 1u32;
+    let k4 = 1;
     res = levenshtein_search_naive_k(a4, b4, k4, false);
     assert!(res == vec![Match{start: 0, end: 4, k: 1}, Match{start: 12, end: 16, k: 1}]);
 
@@ -358,25 +358,25 @@ fn test_basic_levenshtein_search_naive() {
 fn test_basic_levenshtein_search_simd() {
     let a1 = b"bcc";
     let b1 = b"abcde";
-    let k1 = 1u32;
+    let k1 = 1;
     let mut res = levenshtein_search_simd_k(a1, b1, k1, false);
     assert!(res == vec![Match{start: 1, end: 3, k: 1}, Match{start: 1, end: 4, k: 1}]);
 
     let a2 = b"";
     let b2 = b"";
-    let k2 = 1u32;
+    let k2 = 1;
     res = levenshtein_search_simd_k(a2, b2, k2, false);
     assert!(res == vec![]);
 
     let a3 = b"tast";
     let b3 = b"testing 123 tating!";
-    let k3 = 1u32;
+    let k3 = 1;
     res = levenshtein_search_simd_k(a3, b3, k3, false);
     assert!(res == vec![Match{start: 0, end: 4, k: 1}, Match{start: 12, end: 15, k: 1}]);
 
     let a4 = b"tst";
     let b4 = b"testing 123 tasting!";
-    let k4 = 1u32;
+    let k4 = 1;
     res = levenshtein_search_simd_k(a4, b4, k4, false);
     assert!(res == vec![Match{start: 0, end: 4, k: 1}, Match{start: 12, end: 16, k: 1}]);
 

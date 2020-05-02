@@ -3,13 +3,15 @@ use super::*;
 use super::jewel::*;
 
 pub struct EditCosts {
-    pub match_cost: u32,
-    pub mismatch_cost: u32,
-    pub gap_cost: u32,
-    pub unsigned: bool
+    pub match_cost: i8,
+    pub mismatch_cost: i8,
+    pub gap_cost: i8,
+    pub signed: bool
 }
 
-pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+pub const LEVENSHTEIN_COSTS: EditCosts = EditCosts{match_cost: 0, mismatch_cost: 1, gap_cost: 1, signed: false};
+
+pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (i32, Option<Vec<Edit>>) {
     let swap = a.len() > b.len(); // swap so that a len <= b len
     let a_new = if swap {b} else {a};
     let a_new_len = a_new.len();
@@ -17,12 +19,12 @@ pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec
     let b_new_len = b_new.len();
 
     let len = a_new_len + 1;
-    let mut dp1 = vec![0u32; len]; // in each iteration, dp1 is already calculated
-    let mut dp2 = vec![0u32; len]; // dp2 the currently calculated column
+    let mut dp1 = vec![0i32; len]; // in each iteration, dp1 is already calculated
+    let mut dp2 = vec![0i32; len]; // dp2 the currently calculated column
     let mut traceback = if trace_on {vec![0u8; (b_new_len + 1) * len]} else {vec![]};
 
     for i in 0..len {
-        dp1[i] = i as u32;
+        dp1[i] = i as i32;
 
         if trace_on {
             traceback[0 * len + i] = 2u8;
@@ -30,14 +32,14 @@ pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec
     }
 
     for i in 1..(b_new_len + 1) {
-        dp2[0] = i as u32;
+        dp2[0] = i as i32;
 
         if trace_on {
             traceback[i * len + 0] = 1u8;
         }
 
         for j in 1..len {
-            let sub = dp1[j - 1] + (a_new[j - 1] != b_new[i - 1]) as u32;
+            let sub = dp1[j - 1] + (a_new[j - 1] != b_new[i - 1]) as i32;
             let a_gap = dp1[j] + 1;
             let b_gap = dp2[j - 1] + 1;
             let traceback_idx = i * len + j;
@@ -71,7 +73,7 @@ pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec
     }
 
     if trace_on {
-        let mut res: Vec<Edit> = Vec::with_capacity(((dp1[a_new_len] << 1) + 1) as usize);
+        let mut res: Vec<Edit> = Vec::with_capacity(a_new_len);
         let mut i = b_new_len;
         let mut j = a_new_len;
 
@@ -109,7 +111,7 @@ pub fn levenshtein_naive(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec
     }
 }
 
-pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> Option<(u32, Option<Vec<Edit>>)> {
+pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: i32, trace_on: bool) -> Option<(i32, Option<Vec<Edit>>)> {
     let swap = a.len() > b.len(); // swap so that a len <= b len
     let a_new = if swap {b} else {a};
     let a_new_len = a_new.len();
@@ -127,12 +129,12 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> Option
     let mut prev_lo;
     let mut prev_hi;
     let k_len = std::cmp::min((k_usize << 1) + 1, b_new_len + 1);
-    let mut dp1 = vec![0u32; k_len]; // in each iteration, dp1 is already calculated
-    let mut dp2 = vec![0u32; k_len]; // dp2 the currently calculated row
+    let mut dp1 = vec![0i32; k_len]; // in each iteration, dp1 is already calculated
+    let mut dp2 = vec![0i32; k_len]; // dp2 the currently calculated row
     let mut traceback = if trace_on {vec![0u8; len * k_len]} else {vec![]};
 
     for i in 0..(hi - lo) {
-        dp1[i] = i as u32;
+        dp1[i] = i as i32;
 
         if trace_on {
             traceback[0 * k_len + i] = 1u8;
@@ -152,13 +154,13 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> Option
             let idx = lo + j;
             let sub = {
                 if idx == 0 {
-                    u32::max_value()
+                    i32::max_value()
                 }else{
-                    dp1[idx - 1 - prev_lo] + (a_new[i - 1] != b_new[idx - 1]) as u32
+                    dp1[idx - 1 - prev_lo] + (a_new[i - 1] != b_new[idx - 1]) as i32
                 }
             };
-            let a_gap = if j == 0 {u32::max_value()} else {dp2[j - 1] + 1};
-            let b_gap = if idx >= prev_hi {u32::max_value()} else {dp1[idx - prev_lo] + 1};
+            let a_gap = if j == 0 {i32::max_value()} else {dp2[j - 1] + 1};
+            let b_gap = if idx >= prev_hi {i32::max_value()} else {dp1[idx - prev_lo] + 1};
 
             dp2[j] = sub;
 
@@ -198,7 +200,7 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32, trace_on: bool) -> Option
         return Some((dp1[hi - lo - 1], None));
     }
 
-    let mut res: Vec<Edit> = Vec::with_capacity(((dp1[hi - lo - 1] << 1) + 1) as usize);
+    let mut res: Vec<Edit> = Vec::with_capacity(a_new_len);
     let mut i = a_new_len;
     let mut j = b_new_len;
 
@@ -242,9 +244,9 @@ pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: i32, trace_on: bool) -> Option<
     {
         if is_x86_feature_detected!("avx2") {
             if k <= 30 {
-                return unsafe {levenshtein_simd_core::<Avx1x32x8>(a, b, k, trace_on)};
+                return unsafe {levenshtein_simd_core::<Avx1x32x8>(a, b, k, trace_on, LEVENSHTEIN_COSTS)};
             }else{
-                return unsafe {levenshtein_simd_core::<AvxNx32x8>(a, b, k, trace_on)};
+                return unsafe {levenshtein_simd_core::<AvxNx32x8>(a, b, k, trace_on, LEVENSHTEIN_COSTS)};
             }
         }
     }
@@ -265,7 +267,7 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: i32, tr
         return None;
     }
 
-    // initialized with max value of i8
+    // initialized with max values
     // must use saturated additions afterwards to not overflow
     let mut dp1 = T::repeating_max((k + 2) as usize);
     let max_len = dp1.upper_bound();
@@ -279,10 +281,10 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: i32, tr
     let k2_div2 = k2 >> 1;
 
     // set dp[0][0] = 0
-    dp1.slow_insert(k1_div2, 0, costs.unsigned);
-    // set dp[0][1] = 1 and dp[1][0] = 1
-    dp2.slow_insert(k2_div2 - 1, costs.gap_cost, costs.unsigned);
-    dp2.slow_insert(k2_div2, costs.gap_cost, costs.unsigned);
+    dp1.slow_insert(k1_div2, 0, costs.signed);
+    // set dp[0][1] = gap_cost and dp[1][0] = gap_cost
+    dp2.slow_insert(k2_div2 - 1, costs.gap_cost as u32, costs.signed);
+    dp2.slow_insert(k2_div2, costs.gap_cost as u32, costs.signed);
 
     // a_k1_window and a_k2_window represent reversed portions of the string a
     // copy in half of k1/k2 number of characters
@@ -331,9 +333,9 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: i32, tr
     let mut a_gap = T::repeating(0, max_len, false);
     let mut b_gap = T::repeating(0, max_len, false);
 
-    let match_cost = T::repeating(costs.match_cost, max_len, false);
-    let mismatch_cost = T::repeating(costs.mismatch_cost, max_len, false);
-    let gap_cost = T::repeating(costs.gap_cost, max_len, false);
+    let match_cost = T::repeating(costs.match_cost as u32, max_len, false);
+    let mismatch_cost = T::repeating(costs.mismatch_cost as u32, max_len, false);
+    let gap_cost = T::repeating(costs.gap_cost as u32, max_len, false);
 
     // example: allow k = 2 edits for two strings of length 3
     //      -b--   
@@ -456,9 +458,9 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: i32, tr
     }
 
     let final_res = if ends_with_k2 {
-        dp2.slow_extract(final_idx, costs.unsigned)
+        dp2.slow_extract(final_idx, costs.signed)
     }else{
-        dp1.slow_extract(final_idx, costs.unsigned)
+        dp1.slow_extract(final_idx, costs.signed)
     };
 
     if final_res > k {
@@ -469,21 +471,21 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: i32, tr
         return Some((final_res, None));
     }
 
-    Some((final_res, Some(traceback(&traceback_arr, final_res, final_idx, a, b, swap, ends_with_k2))))
+    Some((final_res, Some(traceback(&traceback_arr, final_idx, a, b, swap, ends_with_k2))))
 }
 
-unsafe fn traceback<T: Jewel>(arr: &[T], k: u32, mut idx: usize, a: &[u8], b: &[u8], swap: bool, mut is_k2: bool) -> Vec<Edit> {
+unsafe fn traceback<T: Jewel>(arr: &[T], mut idx: usize, a: &[u8], b: &[u8], swap: bool, mut is_k2: bool) -> Vec<Edit> {
     // keep track of position in traditional dp array and strings
     let mut i = a.len(); // index in a
     let mut j = b.len(); // index in b
 
     // last diagonal may overshoot, so ignore it
     let mut arr_idx = arr.len() - 1 - (if is_k2 {0} else {1});
-    let mut res: Vec<Edit> = Vec::with_capacity(((1 << k) + 1) as usize);
+    let mut res: Vec<Edit> = Vec::with_capacity(a.len());
 
     while arr_idx > 0 {
         // each Jewel vector in arr is only visited once, so extract (which is costly) is fine
-        let edit = arr.get_unchecked(arr_idx).slow_extract(idx);
+        let edit = arr.get_unchecked(arr_idx).slow_extract(idx, false);
 
         let e = match edit {
             0 => { // match/mismatch
@@ -528,7 +530,7 @@ unsafe fn traceback<T: Jewel>(arr: &[T], k: u32, mut idx: usize, a: &[u8], b: &[
     res
 }
 
-pub fn levenshtein_exp(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+pub fn levenshtein_exp(a: &[u8], b: &[u8], trace_on: bool) -> (i32, Option<Vec<Edit>>) {
     let mut k = 30;
     let mut res = levenshtein_simd_k(a, b, k, false);
 
@@ -545,10 +547,10 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec<E
 }
 
 pub fn levenshtein_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
-    levenshtein_search_naive_k(needle, haystack, needle.len() as u32, true)
+    levenshtein_search_naive_k(needle, haystack, needle.len() as i32, true)
 }
 
-pub fn levenshtein_search_naive_k(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
+pub fn levenshtein_search_naive_k(needle: &[u8], haystack: &[u8], k: i32, best: bool) -> Vec<Match> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
 
@@ -557,15 +559,15 @@ pub fn levenshtein_search_naive_k(needle: &[u8], haystack: &[u8], k: u32, best: 
     }
 
     let len = needle_len + 1;
-    let mut dp1 = vec![0u32; len];
-    let mut dp2 = vec![0u32; len];
+    let mut dp1 = vec![0i32; len];
+    let mut dp2 = vec![0i32; len];
     let mut length1 = vec![0usize; len];
     let mut length2 = vec![0usize; len];
     let mut res = Vec::with_capacity(haystack_len >> 2);
     let mut curr_k = k;
 
     for i in 0..len {
-        dp1[i] = i as u32;
+        dp1[i] = i as i32;
     }
 
     if dp1[len - 1] <= curr_k {
@@ -581,7 +583,7 @@ pub fn levenshtein_search_naive_k(needle: &[u8], haystack: &[u8], k: u32, best: 
         length2[0] = 0;
 
         for j in 1..len {
-            let sub = dp1[j - 1] + (needle[j - 1] != haystack[i]) as u32;
+            let sub = dp1[j - 1] + (needle[j - 1] != haystack[i]) as i32;
             let a_gap = dp1[j] + 1;
             let b_gap = dp2[j - 1] + 1;
 
@@ -634,9 +636,9 @@ pub fn levenshtein_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     {
         if is_x86_feature_detected!("avx2") {
             if needle.len() <= 32 {
-                return unsafe {levenshtein_search_simd_core::<Avx1x32x8>(needle, haystack, needle.len() as i32, true)};
+                return unsafe {levenshtein_search_simd_core::<Avx1x32x8>(needle, haystack, needle.len() as i32, true, LEVENSHTEIN_COSTS)};
             }else{
-                return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, needle.len() as i32, true)};
+                return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, needle.len() as i32, true, LEVENSHTEIN_COSTS)};
             }
         }
     }
@@ -653,9 +655,9 @@ pub fn levenshtein_search_simd_k(needle: &[u8], haystack: &[u8], k: i32, best: b
     {
         if is_x86_feature_detected!("avx2") {
             if needle.len() <= 32 {
-                return unsafe {levenshtein_search_simd_core::<Avx1x32x8>(needle, haystack, k, best)};
+                return unsafe {levenshtein_search_simd_core::<Avx1x32x8>(needle, haystack, k, best, LEVENSHTEIN_COSTS)};
             }else{
-                return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, k, best)};
+                return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, k, best, LEVENSHTEIN_COSTS)};
             }
         }
     }
@@ -668,11 +670,11 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
     let haystack_len = haystack.len();
     let mut dp1 = T::repeating_max(needle_len);
     let mut dp2 = T::repeating_max(needle_len);
-    dp2.slow_insert(dp2.upper_bound() - 1, costs.gap_cost, costs.unsigned); // last cell
+    dp2.slow_insert(dp2.upper_bound() - 1, costs.gap_cost as u32, costs.signed); // last cell
 
     // save length instead of start idx due to int size constraints
-    let mut length1 = T::repeating(0, needle_len, true);
-    let mut length2 = T::repeating(0, needle_len, true);
+    let mut length1 = T::repeating(0, needle_len, false);
+    let mut length2 = T::repeating(0, needle_len, false);
 
     let ones = T::repeating(1, needle_len, false);
 
@@ -692,9 +694,14 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
     let mut match_mask = T::repeating(0, needle_len, false);
     let mut sub = T::repeating(0, needle_len, false);
     let mut sub_length = T::repeating(0, needle_len, false);
+    let mut needle_gap = T::repeating(0, needle_len, false);
     let mut needle_gap_length = T::repeating(0, needle_len, false);
     let mut haystack_gap = T::repeating(0, needle_len, false);
     let mut haystack_gap_length = T::repeating(0, needle_len, false);
+
+    let match_cost = T::repeating(costs.match_cost as u32, needle_len, false);
+    let mismatch_cost = T::repeating(costs.mismatch_cost as u32, needle_len, false);
+    let gap_cost = T::repeating(costs.gap_cost as u32, needle_len, false);
 
     //       ..i...
     //       --h---
@@ -720,19 +727,18 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
         }
 
         T::cmpeq(&needle_window, &haystack_window, &mut match_mask);
-        match_mask.blendv(&mismatch_cost, &match_cost);
+        match_mask.blendv_mut(&mismatch_cost, &match_cost);
 
         // match/mismatch
         T::shift_left_1(&dp1, &mut sub);
 
-        if costs.unsigned {
+        if costs.signed {
             sub.insert_last_0(0, true);
         } // otherwise, zeros are shifted in
 
         sub.adds_mut(&match_mask);
 
         T::shift_left_1(&length1, &mut sub_length);
-        sub_length.insert_last_0(0, true);
         sub_length.add_mut(&ones);
 
         // gap in needle
@@ -742,14 +748,13 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
         // gap in haystack
         T::shift_left_1(&dp2, &mut haystack_gap);
 
-        if costs.unsigned {
+        if costs.signed {
             haystack_gap.insert_last_0(0, true);
         } // otherwise, zeros are shifted in
 
         haystack_gap.adds_mut(&gap_cost);
 
         T::shift_left_1(&length2, &mut haystack_gap_length);
-        haystack_gap_length.insert_last_0(0, true);
 
         T::triple_min_length(&sub, &needle_gap, &haystack_gap, &sub_length,
                              &needle_gap_length, &haystack_gap_length, &mut dp1, &mut length1);
@@ -757,8 +762,8 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
         std::mem::swap(&mut length1, &mut length2);
 
         if i >= needle_len - 1 {
-            let final_res = dp2.slow_extract(final_idx, costs.unsigned);
-            let final_length = length2.slow_extract(final_idx, costs.unsigned) as usize;
+            let final_res = dp2.slow_extract(final_idx, costs.signed);
+            let final_length = length2.slow_extract(final_idx, false) as usize;
 
             if final_res <= curr_k {
                 let end_idx = i + 1 - needle_len;
