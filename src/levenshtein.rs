@@ -277,11 +277,24 @@ pub fn levenshtein_simd_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool, 
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
+        let unit_k = k / (costs.gap_cost as u32);
+
+        // note: do not use the max_value, because it indicates overflow/inaccuracy
         if is_x86_feature_detected!("avx2") {
-            if k <= 30 {
+            if unit_k <= 30 && k <= ((u8::max_value() - 1) as u32) {
                 return unsafe {levenshtein_simd_core::<Avx1x32x8>(a, b, k, trace_on, costs)};
-            }else{
+            }else if k <= ((u8::max_value() - 1) as u32) {
                 return unsafe {levenshtein_simd_core::<AvxNx32x8>(a, b, k, trace_on, costs)};
+            }else if k <= ((u16::max_value() - 1) as u32) {
+
+            }
+        }else if is_x86_feature_detected!("sse3") {
+            if unit_k <= 14 && k <= ((u8::max_value() - 1) as u32) {
+                return unsafe {levenshtein_simd_core::<Avx1x32x8>(a, b, k, trace_on, costs)};
+            }else if k <= ((u8::max_value() - 1) as u32) {
+                return unsafe {levenshtein_simd_core::<AvxNx32x8>(a, b, k, trace_on, costs)};
+            }else if k <= ((u16::max_value() - 1) as u32) {
+
             }
         }
     }
@@ -672,11 +685,26 @@ pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32,
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
+        let unit_k = k / (costs.gap_cost as u32);
+        // either the length of the match or the number of edits may exceed the maximum
+        // available int size; additionally, max_value is used to indicate overflow
+        let max_k = std::cmp::max(needle.len() as u32 + unit_k, k + 1);
+
         if is_x86_feature_detected!("avx2") {
-            if needle.len() <= 32 {
+            if needle.len() <= 32 && max_k <= u8::max_value() as u32 {
                 return unsafe {levenshtein_search_simd_core::<Avx1x32x8>(needle, haystack, k, best, costs)};
-            }else{
+            }else if max_k <= u8::max_value() as u32 {
                 return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, k, best, costs)};
+            }else if max_k <= u16::max_value() as u32 {
+
+            }
+        }else if is_x86_feature_detected!("sse3") {
+            if needle.len() <= 16 && max_k <= u8::max_value() as u32 {
+                return unsafe {levenshtein_search_simd_core::<Avx1x32x8>(needle, haystack, k, best, costs)};
+            }else if max_k <= u8::max_value() as u32 {
+                return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, k, best, costs)};
+            }else if max_k <= u16::max_value() as u32 {
+
             }
         }
     }
