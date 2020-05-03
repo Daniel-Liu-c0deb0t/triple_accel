@@ -43,7 +43,7 @@ pub struct Match {
     /// The end index of the match (exclusive).
     pub end: usize,
     /// Number of edits for the match.
-    pub k: i32
+    pub k: u32
 }
 
 /// An enum describing possible edit operations.
