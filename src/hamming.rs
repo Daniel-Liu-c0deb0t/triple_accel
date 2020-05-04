@@ -52,7 +52,7 @@ pub fn hamming_naive(a: &[u8], b: &[u8]) -> u32 {
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
 pub fn hamming_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
-    hamming_search_naive_with_opts(needle, haystack, needle.len() as u32, true)
+    hamming_search_naive_with_opts(needle, haystack, needle.len() as u32, SearchType::Best)
 }
 
 /// Returns a vector of `Match`s by naively searching through the text `haystack` for the pattern `needle`.
@@ -65,17 +65,18 @@ pub fn hamming_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// * `needle` - pattern string (slice)
 /// * `haystack` - text string (slice)
 /// * `k` - number of mismatches allowed
-/// * `best` - whether to only return the "best" matches with the lowest Hamming distance
+/// * `search_type` - whether to only return the "best" matches with the lowest Hamming distance, or
+/// the first match that is encountered
 ///
 /// # Example
 /// ```
 /// # use triple_accel::*;
 ///
-/// let matches = hamming_search_naive_with_opts(b"abc", b"  abd", 1, false);
+/// let matches = hamming_search_naive_with_opts(b"abc", b"  abd", 1, SearchType::None);
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
-pub fn hamming_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
+pub fn hamming_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType) -> Vec<Match> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
 
@@ -100,12 +101,14 @@ pub fn hamming_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32, be
 
         res.push(Match{start: i, end: i + needle_len, k: final_res});
 
-        if best {
-            curr_k = final_res;
+        match search_type {
+            SearchType::First => break,
+            SearchType::Best => curr_k = final_res,
+            _ => ()
         }
     }
 
-    if best {
+    if search_type == SearchType::Best {
         res.retain(|m| m.k == curr_k);
     }
 
@@ -358,7 +361,7 @@ unsafe fn hamming_simd_movemask_core<T: Jewel>(a: &[u8], b: &[u8]) -> u32 {
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
 pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
-    hamming_search_simd_with_opts(needle, haystack, needle.len() as u32, true)
+    hamming_search_simd_with_opts(needle, haystack, needle.len() as u32, SearchType::Best)
 }
 
 /// Returns a vector of `Match`s by searching through the text `haystack` for the pattern `needle` using AVX2.
@@ -372,7 +375,8 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// * `needle` - pattern string (slice)
 /// * `haystack` - text string (slice)
 /// * `k` - number of mismatches allowed
-/// * `best` - whether to only return the "best" matches with the lowest Hamming distance
+/// * `search_type` - whether to only return the "best" matches with the lowest Hamming distance or
+/// the first match that is encountered
 ///
 /// # Panics
 /// * If needle length is greater than 32.
@@ -381,11 +385,11 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// ```
 /// # use triple_accel::*;
 ///
-/// let matches = hamming_search_simd_with_opts(b"abc", b"  abd", 1, false);
+/// let matches = hamming_search_simd_with_opts(b"abc", b"  abd", 1, SearchType::None);
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
-pub fn hamming_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
+pub fn hamming_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType) -> Vec<Match> {
     if needle.len() > haystack.len() {
         return vec![];
     }
@@ -397,14 +401,14 @@ pub fn hamming_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32, bes
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {hamming_search_simd_core::<AvxNx32x8>(needle, haystack, k, best)};
+            return unsafe {hamming_search_simd_core::<AvxNx32x8>(needle, haystack, k, search_type)};
         }
     }
 
-    hamming_search_naive_with_opts(needle, haystack, k, best)
+    hamming_search_naive_with_opts(needle, haystack, k, search_type)
 }
 
-unsafe fn hamming_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: u32, best: bool) -> Vec<Match> {
+unsafe fn hamming_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType) -> Vec<Match> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
     let needle_vector = T::loadu(needle.as_ptr(), needle_len);
@@ -420,8 +424,10 @@ unsafe fn hamming_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: 
         if final_res <= curr_k {
             res.push(Match{start: i, end: i + needle_len, k: final_res});
 
-            if best {
-                curr_k = final_res;
+            match search_type {
+                SearchType::First => break,
+                SearchType::Best => curr_k = final_res,
+                _ => ()
             }
         }
     }
@@ -439,12 +445,14 @@ unsafe fn hamming_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: 
 
         res.push(Match{start: i, end: i + needle_len, k: final_res});
 
-        if best {
-            curr_k = final_res;
+        match search_type {
+            SearchType::First => break,
+            SearchType::Best => curr_k = final_res,
+            _ => ()
         }
     }
 
-    if best {
+    if search_type == SearchType::Best {
         res.retain(|m| m.k == curr_k);
     }
 

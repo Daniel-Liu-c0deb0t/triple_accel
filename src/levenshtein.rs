@@ -288,7 +288,7 @@ pub fn levenshtein_simd_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool, 
             }else if k <= ((u16::max_value() - 1) as u32) {
 
             }
-        }else if is_x86_feature_detected!("sse3") {
+        }else if is_x86_feature_detected!("sse4.1") {
             if unit_k <= 14 && k <= ((u8::max_value() - 1) as u32) {
                 return unsafe {levenshtein_simd_core::<Avx1x32x8>(a, b, k, trace_on, costs)};
             }else if k <= ((u8::max_value() - 1) as u32) {
@@ -597,10 +597,10 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec<E
 }
 
 pub fn levenshtein_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
-    levenshtein_search_naive_with_opts(needle, haystack, needle.len() as u32, true, LEVENSHTEIN_COSTS)
+    levenshtein_search_naive_with_opts(needle, haystack, needle.len() as u32, SearchType::Best, LEVENSHTEIN_COSTS, false)
 }
 
-pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32, best: bool, costs: EditCosts) -> Vec<Match> {
+pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
 
@@ -609,11 +609,17 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
     }
 
     let len = needle_len + 1;
+    let iter_len = if anchored {
+        std::cmp::min(haystack_len, needle_len + (k as usize) / (costs.gap_cost as usize))
+    }else{
+        haystack_len
+    };
+
     let mut dp1 = vec![0u32; len];
     let mut dp2 = vec![0u32; len];
     let mut length1 = vec![0usize; len];
     let mut length2 = vec![0usize; len];
-    let mut res = Vec::with_capacity(haystack_len >> 2);
+    let mut res = Vec::with_capacity(iter_len >> 2);
     let mut curr_k = k;
     let mismatch_cost = costs.mismatch_cost as u32;
     let gap_cost = costs.gap_cost as u32;
@@ -625,13 +631,13 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
     if dp1[len - 1] <= curr_k {
         res.push(Match{start: 0, end: 0, k: dp1[len - 1]});
 
-        if best {
+        if search_type == SearchType::Best {
             curr_k = dp1[len - 1];
         }
     }
 
-    for i in 0..haystack_len {
-        dp2[0] = 0;
+    for i in 0..iter_len {
+        dp2[0] = if anchored {(i as u32 + 1) * (costs.gap_cost as u32)} else {0};
         length2[0] = 0;
 
         for j in 1..len {
@@ -658,8 +664,10 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
         if final_res <= curr_k {
             res.push(Match{start: i + 1 - length2[len - 1], end: i + 1, k: final_res});
 
-            if best {
-                curr_k = final_res;
+            match search_type {
+                SearchType::First => break,
+                SearchType::Best => curr_k = final_res,
+                _ => ()
             }
         }
 
@@ -667,7 +675,7 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
         std::mem::swap(&mut length1, &mut length2);
     }
 
-    if best {
+    if search_type == SearchType::Best {
         res.retain(|m| m.k == curr_k);
     }
 
@@ -675,10 +683,10 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
 }
 
 pub fn levenshtein_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
-    levenshtein_search_simd_with_opts(needle, haystack, needle.len() as u32, true, LEVENSHTEIN_COSTS)
+    levenshtein_search_simd_with_opts(needle, haystack, needle.len() as u32, SearchType::Best, LEVENSHTEIN_COSTS, false)
 }
 
-pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32, best: bool, costs: EditCosts) -> Vec<Match> {
+pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {
     if needle.len() == 0 {
         return vec![];
     }
@@ -692,27 +700,27 @@ pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32,
 
         if is_x86_feature_detected!("avx2") {
             if needle.len() <= 32 && max_k <= u8::max_value() as u32 {
-                return unsafe {levenshtein_search_simd_core::<Avx1x32x8>(needle, haystack, k, best, costs)};
+                return unsafe {levenshtein_search_simd_core::<Avx1x32x8>(needle, haystack, k, search_type, costs, anchored)};
             }else if max_k <= u8::max_value() as u32 {
-                return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, k, best, costs)};
+                return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, k, search_type, costs, anchored)};
             }else if max_k <= u16::max_value() as u32 {
 
             }
-        }else if is_x86_feature_detected!("sse3") {
+        }else if is_x86_feature_detected!("sse4.1") {
             if needle.len() <= 16 && max_k <= u8::max_value() as u32 {
-                return unsafe {levenshtein_search_simd_core::<Avx1x32x8>(needle, haystack, k, best, costs)};
+                return unsafe {levenshtein_search_simd_core::<Avx1x32x8>(needle, haystack, k, search_type, costs, anchored)};
             }else if max_k <= u8::max_value() as u32 {
-                return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, k, best, costs)};
+                return unsafe {levenshtein_search_simd_core::<AvxNx32x8>(needle, haystack, k, search_type, costs, anchored)};
             }else if max_k <= u16::max_value() as u32 {
 
             }
         }
     }
 
-    levenshtein_search_naive_with_opts(needle, haystack, k, best, costs)
+    levenshtein_search_naive_with_opts(needle, haystack, k, search_type, costs, anchored)
 }
 
-unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: u32, best: bool, costs: EditCosts) -> Vec<Match> {
+unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
     let mut dp1 = T::repeating_max(needle_len);
@@ -725,10 +733,16 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
 
     let ones = T::repeating(1, needle_len);
 
-    let len = haystack_len + needle_len;
+    // the suffix of haystack can be ignored if needle must be anchored
+    let len = if anchored {
+        needle_len + std::cmp::min(haystack_len, needle_len + (k as usize) / (costs.gap_cost as usize))
+    }else{
+        needle_len + haystack_len
+    };
+
     let final_idx = dp1.upper_bound() - needle_len;
 
-    let mut res = Vec::with_capacity(haystack_len >> 2);
+    let mut res = Vec::with_capacity((len - needle_len) >> 2);
 
     // load needle characters into needle_window in reversed order
     let mut needle_window = T::repeating(0, needle_len);
@@ -776,7 +790,13 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
         match_mask.andnot_mut(&mismatch_cost);
 
         // match/mismatch
-        T::shift_left_1(&dp1, &mut sub); // zeros are shifted in
+        T::shift_left_1(&dp1, &mut sub);
+
+        if anchored {
+            // dp1 is 2 diagonals behind the current i
+            // must be capped at k to prevent overflow when inserting
+            sub.insert_last_0(std::cmp::min(std::cmp::max(0, i as u32 - 2) * (costs.gap_cost as u32), k + 1));
+        }
 
         sub.adds_mut(&match_mask);
 
@@ -789,6 +809,11 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
 
         // gap in haystack
         T::shift_left_1(&dp2, &mut haystack_gap); // zeros are shifted in
+
+        if anchored {
+            // dp2 is one diagonal behind the current i
+            sub.insert_last_0(std::cmp::min((i as u32 - 1) * (costs.gap_cost as u32), k + 1));
+        }
 
         haystack_gap.adds_mut(&gap_cost);
 
@@ -807,14 +832,17 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
                 let end_idx = i + 1 - needle_len;
                 res.push(Match{start: end_idx - final_length, end: end_idx, k: final_res});
 
-                if best { // if we want the best, then we can shrink the k threshold
-                    curr_k = final_res;
+                match search_type {
+                    SearchType::First => break,
+                    // if we want the best, then we can shrink the k threshold
+                    SearchType::Best => curr_k = final_res,
+                    _ => ()
                 }
             }
         }
     }
 
-    if best {
+    if search_type == SearchType::Best {
         res.retain(|m| m.k == curr_k); // only retain matches with the lowest k
     }
 

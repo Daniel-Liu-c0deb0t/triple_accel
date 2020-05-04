@@ -4,6 +4,11 @@ version = "0.1.0"
 authors = ["c0deb0t <daniel.liu02@gmail.com>"]
 edition = "2018"
 
+[profile.release]
+lto = "thin"
+opt-level = 3
+codegen-units = 1
+
 [[bench]]
 name = "rand_benchmarks"
 harness = false

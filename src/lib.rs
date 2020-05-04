@@ -66,6 +66,16 @@ pub struct Edit {
     pub count: usize
 }
 
+/// An enum representing whether to return the best or the first match when searching.
+///
+/// This is used as an argument for searching routines.
+#[derive(Debug, PartialEq)]
+pub enum SearchType {
+    None,
+    Best,
+    First
+}
+
 /// This creates a vector with the alignment and padding for `u128` values, and then convert it to a vector of `u8` values that is returned.
 ///
 /// This is possible because u8 has looser alignment requirements than `u128`.
