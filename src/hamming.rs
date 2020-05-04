@@ -72,7 +72,7 @@ pub fn hamming_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// ```
 /// # use triple_accel::*;
 ///
-/// let matches = hamming_search_naive_with_opts(b"abc", b"  abd", 1, SearchType::None);
+/// let matches = hamming_search_naive_with_opts(b"abc", b"  abd", 1, SearchType::All);
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
@@ -385,7 +385,7 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// ```
 /// # use triple_accel::*;
 ///
-/// let matches = hamming_search_simd_with_opts(b"abc", b"  abd", 1, SearchType::None);
+/// let matches = hamming_search_simd_with_opts(b"abc", b"  abd", 1, SearchType::All);
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```

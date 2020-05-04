@@ -12,7 +12,7 @@ fn test_basic_hamming_naive() {
 fn test_basic_hamming_search_naive() {
     let a1 = b"abc";
     let b1 = b"  abc  abb";
-    let mut res = hamming_search_naive_with_opts(a1, b1, 1, SearchType::None);
+    let mut res = hamming_search_naive_with_opts(a1, b1, 1, SearchType::All);
     assert!(res == vec![Match{start: 2, end: 5, k: 0}, Match{start: 7, end: 10, k: 1}]);
 
     let a2 = b"abc";
@@ -25,7 +25,7 @@ fn test_basic_hamming_search_naive() {
 fn test_basic_hamming_search_simd() {
     let a1 = b"abc";
     let b1 = b"  abc  abb";
-    let mut res = hamming_search_simd_with_opts(a1, b1, 1, SearchType::None);
+    let mut res = hamming_search_simd_with_opts(a1, b1, 1, SearchType::All);
     assert!(res == vec![Match{start: 2, end: 5, k: 0}, Match{start: 7, end: 10, k: 1}]);
 
     let a2 = b"abc";
@@ -322,25 +322,25 @@ fn test_basic_levenshtein_search_naive() {
     let a1 = b"bcc";
     let b1 = b"abcde";
     let k1 = 1;
-    let mut res = levenshtein_search_naive_with_opts(a1, b1, k1, SearchType::None, LEVENSHTEIN_COSTS);
+    let mut res = levenshtein_search_naive_with_opts(a1, b1, k1, SearchType::All, LEVENSHTEIN_COSTS, false);
     assert!(res == vec![Match{start: 1, end: 3, k: 1}, Match{start: 1, end: 4, k: 1}]);
 
     let a2 = b"";
     let b2 = b"";
     let k2 = 1;
-    res = levenshtein_search_naive_with_opts(a2, b2, k2, SearchType::None, LEVENSHTEIN_COSTS);
+    res = levenshtein_search_naive_with_opts(a2, b2, k2, SearchType::All, LEVENSHTEIN_COSTS, false);
     assert!(res == vec![]);
 
     let a3 = b"tast";
     let b3 = b"testing 123 tating!";
     let k3 = 1;
-    res = levenshtein_search_naive_with_opts(a3, b3, k3, SearchType::None, LEVENSHTEIN_COSTS);
+    res = levenshtein_search_naive_with_opts(a3, b3, k3, SearchType::All, LEVENSHTEIN_COSTS, false);
     assert!(res == vec![Match{start: 0, end: 4, k: 1}, Match{start: 12, end: 15, k: 1}]);
 
     let a4 = b"tst";
     let b4 = b"testing 123 tasting!";
     let k4 = 1;
-    res = levenshtein_search_naive_with_opts(a4, b4, k4, SearchType::None, LEVENSHTEIN_COSTS);
+    res = levenshtein_search_naive_with_opts(a4, b4, k4, SearchType::All, LEVENSHTEIN_COSTS, false);
     assert!(res == vec![Match{start: 0, end: 4, k: 1}, Match{start: 12, end: 16, k: 1}]);
 
     let a5 = b"tst";
@@ -354,25 +354,25 @@ fn test_basic_levenshtein_search_simd() {
     let a1 = b"bcc";
     let b1 = b"abcde";
     let k1 = 1;
-    let mut res = levenshtein_search_simd_with_opts(a1, b1, k1, SearchType::None, LEVENSHTEIN_COSTS);
+    let mut res = levenshtein_search_simd_with_opts(a1, b1, k1, SearchType::All, LEVENSHTEIN_COSTS, false);
     assert!(res == vec![Match{start: 1, end: 3, k: 1}, Match{start: 1, end: 4, k: 1}]);
 
     let a2 = b"";
     let b2 = b"";
     let k2 = 1;
-    res = levenshtein_search_simd_with_opts(a2, b2, k2, SearchType::None, LEVENSHTEIN_COSTS);
+    res = levenshtein_search_simd_with_opts(a2, b2, k2, SearchType::All, LEVENSHTEIN_COSTS, false);
     assert!(res == vec![]);
 
     let a3 = b"tast";
     let b3 = b"testing 123 tating!";
     let k3 = 1;
-    res = levenshtein_search_simd_with_opts(a3, b3, k3, SearchType::None, LEVENSHTEIN_COSTS);
+    res = levenshtein_search_simd_with_opts(a3, b3, k3, SearchType::All, LEVENSHTEIN_COSTS, false);
     assert!(res == vec![Match{start: 0, end: 4, k: 1}, Match{start: 12, end: 15, k: 1}]);
 
     let a4 = b"tst";
     let b4 = b"testing 123 tasting!";
     let k4 = 1;
-    res = levenshtein_search_simd_with_opts(a4, b4, k4, SearchType::None, LEVENSHTEIN_COSTS);
+    res = levenshtein_search_simd_with_opts(a4, b4, k4, SearchType::All, LEVENSHTEIN_COSTS, false);
     assert!(res == vec![Match{start: 0, end: 4, k: 1}, Match{start: 12, end: 16, k: 1}]);
 
     let a5 = b"tst";

@@ -20,13 +20,12 @@ fn bench_rand_hamming(c: &mut Criterion) {
 fn bench_rand_hamming_search(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1234);
     let k = black_box(16);
-    let best = false;
     let (needle, haystack) = black_box(rand_hamming_needle_haystack(32, 1000, 50, k, &mut rng));
 
     let mut group = c.benchmark_group("bench_rand_hamming_search");
 
-    group.bench_function("hamming_search_naive_k", |b| b.iter(|| hamming_search_naive_with_opts(&needle, &haystack, k, best)));
-    group.bench_function("hamming_search_simd_k", |b| b.iter(|| hamming_search_simd_with_opts(&needle, &haystack, k, best)));
+    group.bench_function("hamming_search_naive_k", |b| b.iter(|| hamming_search_naive_with_opts(&needle, &haystack, k, SearchType::All)));
+    group.bench_function("hamming_search_simd_k", |b| b.iter(|| hamming_search_simd_with_opts(&needle, &haystack, k, SearchType::All)));
 
     group.finish();
 }
@@ -61,13 +60,12 @@ fn bench_rand_levenshtein_k(c: &mut Criterion) {
 fn bench_rand_levenshtein_search(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1234);
     let k = black_box(16);
-    let best = false;
     let (needle, haystack) = black_box(rand_levenshtein_needle_haystack(32, 1000, 50, k, &mut rng));
 
     let mut group = c.benchmark_group("bench_rand_levenshtein_search");
 
-    group.bench_function("levenshtein_search_naive_k", |b| b.iter(|| levenshtein_search_naive_with_opts(&needle, &haystack, k, best, LEVENSHTEIN_COSTS)));
-    group.bench_function("levenshtein_search_simd_k", |b| b.iter(|| levenshtein_search_simd_with_opts(&needle, &haystack, k, best, LEVENSHTEIN_COSTS)));
+    group.bench_function("levenshtein_search_naive_k", |b| b.iter(|| levenshtein_search_naive_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, false)));
+    group.bench_function("levenshtein_search_simd_k", |b| b.iter(|| levenshtein_search_simd_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, false)));
 
     group.finish();
 }

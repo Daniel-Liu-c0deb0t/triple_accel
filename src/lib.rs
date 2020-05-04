@@ -71,7 +71,7 @@ pub struct Edit {
 /// This is used as an argument for searching routines.
 #[derive(Debug, PartialEq)]
 pub enum SearchType {
-    None,
+    All,
     Best,
     First
 }
