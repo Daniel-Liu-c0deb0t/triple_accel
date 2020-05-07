@@ -54,7 +54,8 @@ pub enum EditType {
     Match,
     Mismatch,
     AGap,
-    BGap
+    BGap,
+    Transpose
 }
 
 /// A struct representing a sequence of edits of the same type.

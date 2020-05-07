@@ -289,6 +289,12 @@ fn test_basic_levenshtein_simd_k_with_opts() {
     res = levenshtein_simd_k_with_opts(a5, b5, 2, false, LEVENSHTEIN_COSTS).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.is_none());
+
+    let a6 = b"abcde";
+    let b6 = b"acbde";
+    res = levenshtein_simd_k_with_opts(a6, b6, 2, false, EditCosts::new(1, 1, Some(1))).unwrap();
+    assert!(res.0 == 1);
+    assert!(res.1.is_none());
 }
 
 #[test]
@@ -315,6 +321,14 @@ fn test_trace_on_levenshtein_simd_k_with_opts() {
     assert!(res.1.unwrap() == vec![Edit{edit: EditType::Match, count: 3},
                                    Edit{edit: EditType::Mismatch, count: 1},
                                    Edit{edit: EditType::Match, count: 1}]);
+
+    let a4 = b"abcde";
+    let b4 = b"acbde";
+    res = levenshtein_simd_k_with_opts(a4, b4, 2, true, EditCosts::new(1, 1, Some(1))).unwrap();
+    assert!(res.0 == 1);
+    assert!(res.1.unwrap() == vec![Edit{edit: EditType::Match, count: 1},
+                                   Edit{edit: EditType::Transpose, count: 1},
+                                   Edit{edit: EditType::Match, count: 2}]);
 }
 
 #[test]

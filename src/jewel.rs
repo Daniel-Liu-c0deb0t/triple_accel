@@ -40,10 +40,12 @@ pub trait Jewel: fmt::Display {
 
     unsafe fn add_mut(&mut self, b: &Self);
     unsafe fn adds_mut(&mut self, b: &Self);
+    unsafe fn and_mut(&mut self, b: &Self);
     unsafe fn andnot_mut(&mut self, b: &Self);
     unsafe fn cmpeq_mut(&mut self, b: &Self);
     unsafe fn min_mut(&mut self, b: &Self);
     unsafe fn max_mut(&mut self, b: &Self);
+    unsafe fn blendv_mut(&mut self, b: &Self, mask: &Self);
     unsafe fn shift_left_1_mut(&mut self);
     unsafe fn shift_right_1_mut(&mut self);
 
@@ -370,10 +372,19 @@ impl Jewel for AvxNx32x8 {
 
     operation_mut_param2!("avx2", add_mut, _mm256_add_epi8);
     operation_mut_param2!("avx2", adds_mut, _mm256_adds_epu8);
+    operation_mut_param2!("avx2", and_mut, _mm256_and_si256);
     operation_mut_param2!("avx2", andnot_mut, _mm256_andnot_si256);
     operation_mut_param2!("avx2", cmpeq_mut, _mm256_cmpeq_epi8);
     operation_mut_param2!("avx2", min_mut, _mm256_min_epu8);
     operation_mut_param2!("avx2", max_mut, _mm256_max_epu8);
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn blendv_mut(&mut self, b: &Self, mask: &Self) {
+        for i in 0..self.v.len() {
+            *self.v.get_unchecked_mut(i) = _mm256_blendv_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i), *mask.v.get_unchecked(i));
+        }
+    }
 
     #[target_feature(enable = "avx2")]
     #[inline]
@@ -688,10 +699,17 @@ impl Jewel for Avx1x32x8 {
 
     single_operation_mut_param2!("avx2", add_mut, _mm256_add_epi8);
     single_operation_mut_param2!("avx2", adds_mut, _mm256_adds_epu8);
+    single_operation_mut_param2!("avx2", and_mut, _mm256_and_si256);
     single_operation_mut_param2!("avx2", andnot_mut, _mm256_andnot_si256);
     single_operation_mut_param2!("avx2", cmpeq_mut, _mm256_cmpeq_epi8);
     single_operation_mut_param2!("avx2", min_mut, _mm256_min_epu8);
     single_operation_mut_param2!("avx2", max_mut, _mm256_max_epu8);
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn blendv_mut(&mut self, b: &Self, mask: &Self) {
+        self.v = _mm256_blendv_epi8(self.v, b.v, mask.v);
+    }
 
     #[target_feature(enable = "avx2")]
     #[inline]
