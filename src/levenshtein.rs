@@ -757,7 +757,7 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
     let mismatch_cost = costs.mismatch_cost as u32;
     let gap_cost = costs.gap_cost as u32;
     let transpose_cost = match costs.transpose_cost {
-        Some(cost) => cost,
+        Some(cost) => cost as u32,
         None => 0
     };
     let allow_transpose = costs.transpose_cost.is_some();
@@ -800,9 +800,9 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
                 && needle[j - 1] == haystack[i - 2] && needle[j - 2] == haystack[i - 1] {
                 let transpose = dp0[j - 2] + transpose_cost;
 
-                if transpose < dp2[j] {
+                if transpose <= dp2[j] {
                     dp2[j] = transpose;
-                    length2[j] = length0[j - 2] + 1;
+                    length2[j] = length0[j - 2] + 2;
                 }
             }
         }
@@ -886,6 +886,7 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
     let mut length2 = T::repeating(0, needle_len);
 
     let ones = T::repeating(1, needle_len);
+    let ones = T::repeating(2, needle_len);
 
     // the suffix of haystack can be ignored if needle must be anchored
     let len = if anchored {
@@ -993,7 +994,7 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
             dp0.shift_left_1_mut();
             dp0.shift_left_1_mut();
             T::adds(&dp0, &transpose_cost, &mut transpose);
-            T::adds(&length0, &ones, &mut transpose_length);
+            T::adds(&length0, &twos, &mut transpose_length);
         }
 
         T::triple_min_length(&sub, &needle_gap, &haystack_gap, &sub_length,
