@@ -43,8 +43,14 @@ pub fn levenshtein_naive_with_opts(a: &[u8], b: &[u8], trace_on: bool, costs: Ed
     let b_new_len = b_new.len();
     let mismatch_cost = costs.mismatch_cost as u32;
     let gap_cost = costs.gap_cost as u32;
+    let transpose_cost = match costs.transpose_cost {
+        Some(cost) => cost as u32,
+        None => 0
+    };
+    let allow_transpose = costs.transpose_cost.is_some();
 
     let len = a_new_len + 1;
+    let mut dp0 = vec![0u32; len];
     let mut dp1 = vec![0u32; len]; // in each iteration, dp1 is already calculated
     let mut dp2 = vec![0u32; len]; // dp2 the currently calculated column
     let mut traceback = if trace_on {vec![0u8; (b_new_len + 1) * len]} else {vec![]};
@@ -91,8 +97,22 @@ pub fn levenshtein_naive_with_opts(a: &[u8], b: &[u8], trace_on: bool, costs: Ed
                     traceback[traceback_idx] = 0u8;
                 }
             }
+
+            if allow_transpose && i > 1 && j > 1
+                && a_new[j - 1] == b_new[i - 2] && a_new[j - 2] == b_new[i - 1] {
+                let transpose = dp0[j - 2] + transpose_cost;
+
+                if transpose <= dp2[j] {
+                    dp2[j] = transpose;
+
+                    if trace_on {
+                        traceback[traceback_idx] = 3u8;
+                    }
+                }
+            }
         }
 
+        std::mem::swap(&mut dp0, &mut dp1);
         std::mem::swap(&mut dp1, &mut dp2);
     }
 
@@ -118,6 +138,11 @@ pub fn levenshtein_naive_with_opts(a: &[u8], b: &[u8], trace_on: bool, costs: Ed
                 2 => {
                     j -= 1;
                     if swap {EditType::AGap} else {EditType::BGap}
+                },
+                3 => {
+                    i -= 2;
+                    j -= 2;
+                    EditType::Transpose
                 },
                 _ => unreachable!()
             };
@@ -153,6 +178,11 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
     let b_new_len = b_new.len();
     let mismatch_cost = costs.mismatch_cost as u32;
     let gap_cost = costs.gap_cost as u32;
+    let transpose_cost = match costs.transpose_cost {
+        Some(cost) => cost as u32,
+        None => 0
+    };
+    let allow_transpose = costs.transpose_cost.is_some();
     let unit_k = (k / gap_cost) as usize;
 
     if b_new_len - a_new_len > unit_k {
@@ -162,9 +192,11 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
     let len = a_new_len + 1;
     let mut lo = 0usize;
     let mut hi = std::cmp::min(unit_k + 1, b_new_len + 1);
-    let mut prev_lo;
+    let mut prev_lo0;
+    let mut prev_lo1 = 0; // unused value
     let mut prev_hi;
     let k_len = std::cmp::min((unit_k << 1) + 1, b_new_len + 1);
+    let mut dp0 = vec![0u32; k_len];
     let mut dp1 = vec![0u32; k_len]; // in each iteration, dp1 is already calculated
     let mut dp2 = vec![0u32; k_len]; // dp2 the currently calculated row
     let mut traceback = if trace_on {vec![0u8; len * k_len]} else {vec![]};
@@ -178,7 +210,8 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
     }
 
     for i in 1..len {
-        prev_lo = lo;
+        prev_lo0 = prev_lo1;
+        prev_lo1 = lo;
         prev_hi = hi;
         hi = std::cmp::min(hi + 1, b_new_len + 1);
 
@@ -192,11 +225,11 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
                 if idx == 0 {
                     u32::max_value()
                 }else{
-                    dp1[idx - 1 - prev_lo] + ((a_new[i - 1] != b_new[idx - 1]) as u32) * mismatch_cost
+                    dp1[idx - 1 - prev_lo1] + ((a_new[i - 1] != b_new[idx - 1]) as u32) * mismatch_cost
                 }
             };
             let a_gap = if j == 0 {u32::max_value()} else {dp2[j - 1] + gap_cost};
-            let b_gap = if idx >= prev_hi {u32::max_value()} else {dp1[idx - prev_lo] + gap_cost};
+            let b_gap = if idx >= prev_hi {u32::max_value()} else {dp1[idx - prev_lo1] + gap_cost};
 
             dp2[j] = sub;
 
@@ -221,8 +254,22 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
                     traceback[traceback_idx] = 2u8;
                 }
             }
+
+            if allow_transpose && i > 1 && idx > 1
+                && a_new[i - 1] == b_new[idx - 2] && a_new[i - 2] == b_new[idx - 1] {
+                let transpose = dp0[idx - prev_lo0 - 2] + transpose_cost;
+
+                if transpose <= dp2[j] {
+                    dp2[j] = transpose;
+
+                    if trace_on {
+                        traceback[traceback_idx] = 3u8;
+                    }
+                }
+            }
         }
 
+        std::mem::swap(&mut dp0, &mut dp1);
         std::mem::swap(&mut dp1, &mut dp2);
     }
 
@@ -255,6 +302,11 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
             2 => {
                 i -= 1;
                 if swap {EditType::AGap} else {EditType::BGap}
+            },
+            3 => {
+                i -= 2;
+                j -= 2;
+                EditType::Transpose
             },
             _ => unreachable!()
         };
@@ -398,6 +450,7 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
     let threes = T::repeating(3, max_len);
 
     let mut sub = T::repeating(0, max_len);
+    let mut match_mask = T::repeating(0, max_len);
     let mut a_gap = T::repeating(0, max_len);
     let mut b_gap = T::repeating(0, max_len);
     let mut transpose = T::repeating(0, max_len);
@@ -487,8 +540,8 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
         }
 
         // (anti) diagonal that matches in the a and b windows
-        T::cmpeq(&a_k1_window, &b_k1_window, &mut sub);
-        sub.andnot_mut(&mismatch_cost);
+        T::cmpeq(&a_k1_window, &b_k1_window, &mut match_mask);
+        T::andnot(&match_mask, &mismatch_cost, &mut sub);
         sub.adds_mut(&dp1);
         // cost of gaps in a
         T::shift_right_1(&dp2, &mut a_gap);
@@ -500,7 +553,8 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
         if allow_transpose {
             T::cmpeq(&a_k1_prev_window, &b_k1_window, &mut transpose_mask);
             T::cmpeq(&a_k1_window, &b_k1_prev_window, &mut transpose); // temp reuse transpose vector
-            transpose_mask.and_mut(&transpose);
+            match_mask.andnot_mut(&transpose);
+            transpose_mask.and_mut(&match_mask);
             T::adds(&dp0, &transpose_cost, &mut transpose);
         }
 
@@ -509,8 +563,8 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
             let mut args = T::triple_argmin(&sub, &a_gap, &b_gap, &mut dp0);
 
             if allow_transpose {
-                args.blendv_mut(&threes, &transpose_mask);
                 dp0.blendv_mut(&transpose, &transpose_mask);
+                args.blendv_mut(&threes, &transpose_mask);
             }
 
             traceback_arr.push(args);
@@ -531,8 +585,8 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
         std::mem::swap(&mut b_k1_window, &mut b_k1_prev_window);
 
         // (anti) diagonal that matches in the a and b windows
-        T::cmpeq(&a_k2_window, &b_k2_window, &mut sub);
-        sub.andnot_mut(&mismatch_cost);
+        T::cmpeq(&a_k2_window, &b_k2_window, &mut match_mask);
+        T::andnot(&match_mask, &mismatch_cost, &mut sub);
         sub.adds_mut(&dp1);
         // cost of gaps in b
         T::shift_left_1(&dp2, &mut b_gap);
@@ -544,7 +598,8 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
         if allow_transpose {
             T::cmpeq(&a_k2_prev_window, &b_k2_window, &mut transpose_mask);
             T::cmpeq(&a_k2_window, &b_k2_prev_window, &mut transpose); // temp reuse transpose vector
-            transpose_mask.and_mut(&transpose);
+            match_mask.andnot_mut(&transpose);
+            transpose_mask.and_mut(&match_mask);
             T::adds(&dp0, &transpose_cost, &mut transpose);
         }
 
@@ -553,8 +608,8 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
             let mut args = T::triple_argmin(&sub, &a_gap, &b_gap, &mut dp0);
 
             if allow_transpose {
-                args.blendv_mut(&threes, &transpose_mask);
                 dp0.blendv_mut(&transpose, &transpose_mask);
+                args.blendv_mut(&threes, &transpose_mask);
             }
 
             traceback_arr.push(args);
@@ -636,7 +691,7 @@ unsafe fn traceback<T: Jewel>(arr: &[T], k: usize, mut idx: usize, a: &[u8], b: 
                 is_k2 = !is_k2;
                 if swap {EditType::AGap} else {EditType::BGap}
             },
-            3 => {
+            3 => { // transpose
                 arr_idx -= 4;
                 i -= 2;
                 j -= 2;
@@ -691,14 +746,21 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
         haystack_len
     };
 
+    let mut dp0 = vec![0u32; len];
     let mut dp1 = vec![0u32; len];
     let mut dp2 = vec![0u32; len];
+    let mut length0 = vec![0usize; len];
     let mut length1 = vec![0usize; len];
     let mut length2 = vec![0usize; len];
     let mut res = Vec::with_capacity(iter_len >> 2);
     let mut curr_k = k;
     let mismatch_cost = costs.mismatch_cost as u32;
     let gap_cost = costs.gap_cost as u32;
+    let transpose_cost = match costs.transpose_cost {
+        Some(cost) => cost,
+        None => 0
+    };
+    let allow_transpose = costs.transpose_cost.is_some();
 
     for i in 0..len {
         dp1[i] = (i as u32) * gap_cost;
@@ -733,6 +795,16 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
                 dp2[j] = sub;
                 length2[j] = length1[j - 1] + 1;
             }
+
+            if allow_transpose && i > 1 && j > 1
+                && needle[j - 1] == haystack[i - 2] && needle[j - 2] == haystack[i - 1] {
+                let transpose = dp0[j - 2] + transpose_cost;
+
+                if transpose < dp2[j] {
+                    dp2[j] = transpose;
+                    length2[j] = length0[j - 2] + 1;
+                }
+            }
         }
 
         let final_res = dp2[len - 1];
@@ -747,7 +819,9 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
             }
         }
 
+        std::mem::swap(&mut dp0, &mut dp1);
         std::mem::swap(&mut dp1, &mut dp2);
+        std::mem::swap(&mut length0, &mut length1);
         std::mem::swap(&mut length1, &mut length2);
     }
 
@@ -799,11 +873,15 @@ pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32,
 unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
+    let mut dp0 = T::repeating_max(needle_len);
+    let mut dp_temp = T::repeating_max(needle_len);
     let mut dp1 = T::repeating_max(needle_len);
     let mut dp2 = T::repeating_max(needle_len);
     dp2.slow_insert(dp2.upper_bound() - 1, costs.gap_cost as u32); // last cell
 
     // save length instead of start idx due to int size constraints
+    let mut length0 = T::repeating(0, needle_len);
+    let mut length_temp = T::repeating(0, needle_len);
     let mut length1 = T::repeating(0, needle_len);
     let mut length2 = T::repeating(0, needle_len);
 
@@ -823,21 +901,33 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
     // load needle characters into needle_window in reversed order
     let mut needle_window = T::repeating(0, needle_len);
     needle_window.slow_loadu(needle_window.upper_bound() - 1, needle.as_ptr(), needle_len, true);
+    let mut needle_prev_window = T::repeating(0, needle_len);
+    needle_prev_window.slow_loadu(needle_prev_window.upper_bound() - 2, needle.as_ptr(), needle_len - 1, true);
 
     let mut haystack_window = T::repeating(0, needle_len);
+    let mut haystack_prev_window = T::repeating(0, needle_len);
     let mut haystack_idx = 0usize;
     let mut curr_k = k;
 
     let mut match_mask = T::repeating(0, needle_len);
+    let mut match_mask_cost = T::repeating(0, needle_len);
     let mut sub = T::repeating(0, needle_len);
     let mut sub_length = T::repeating(0, needle_len);
     let mut needle_gap = T::repeating(0, needle_len);
     let mut needle_gap_length = T::repeating(0, needle_len);
     let mut haystack_gap = T::repeating(0, needle_len);
     let mut haystack_gap_length = T::repeating(0, needle_len);
+    let mut transpose = T::repeating(0, needle_len);
+    let mut transpose_length = T::repeating(0, needle_len);
+    let mut transpose_mask = T::repeating(0, needle_len);
 
     let mismatch_cost = T::repeating(costs.mismatch_cost as u32, needle_len);
     let gap_cost = T::repeating(costs.gap_cost as u32, needle_len);
+    let transpose_cost = match costs.transpose_cost {
+        Some(cost) => T::repeating(cost as u32, needle_len),
+        None => T::repeating(0, needle_len)
+    };
+    let allow_transpose = costs.transpose_cost.is_some();
 
     //       ..i...
     //       --h---
@@ -855,7 +945,7 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
 
     for i in 1..len {
         // shift the haystack window
-        haystack_window.shift_left_1_mut();
+        T::shift_left_1(&haystack_prev_window, &mut haystack_window);
 
         if haystack_idx < haystack_len {
             haystack_window.insert_last_0(*haystack.get_unchecked(haystack_idx) as u32);
@@ -863,7 +953,7 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
         }
 
         T::cmpeq(&needle_window, &haystack_window, &mut match_mask);
-        match_mask.andnot_mut(&mismatch_cost);
+        T::andnot(&match_mask, &mismatch_cost, &mut match_mask_cost);
 
         // match/mismatch
         T::shift_left_1(&dp1, &mut sub);
@@ -874,7 +964,7 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
             sub.insert_last_0(std::cmp::min(std::cmp::max(0, i as u32 - 2) * (costs.gap_cost as u32), k + 1));
         }
 
-        sub.adds_mut(&match_mask);
+        sub.adds_mut(&match_mask_cost);
 
         T::shift_left_1(&length1, &mut sub_length); // zeros are shifted in
         sub_length.add_mut(&ones);
@@ -895,10 +985,33 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
 
         T::shift_left_1(&length2, &mut haystack_gap_length); // zeros are shifted in
 
+        if allow_transpose {
+            T::cmpeq(&needle_prev_window, &haystack_window, &mut transpose_mask);
+            T::cmpeq(&needle_window, &haystack_prev_window, &mut transpose); // temp reuse transpose vector
+            match_mask.andnot_mut(&transpose);
+            transpose_mask.and_mut(&match_mask);
+            dp0.shift_left_1_mut();
+            dp0.shift_left_1_mut();
+            T::adds(&dp0, &transpose_cost, &mut transpose);
+            T::adds(&length0, &ones, &mut transpose_length);
+        }
+
         T::triple_min_length(&sub, &needle_gap, &haystack_gap, &sub_length,
-                             &needle_gap_length, &haystack_gap_length, &mut dp1, &mut length1);
+                             &needle_gap_length, &haystack_gap_length, &mut dp0, &mut length0);
+
+        if allow_transpose {
+            dp0.blendv_mut(&transpose, &transpose_mask);
+            length0.blendv_mut(&transpose_length, &transpose_mask);
+        }
+
+        std::mem::swap(&mut dp0, &mut dp_temp);
+        std::mem::swap(&mut dp_temp, &mut dp1);
         std::mem::swap(&mut dp1, &mut dp2);
+        std::mem::swap(&mut length0, &mut length_temp);
+        std::mem::swap(&mut length_temp, &mut length1);
         std::mem::swap(&mut length1, &mut length2);
+
+        std::mem::swap(&mut haystack_window, &mut haystack_prev_window);
 
         if i >= needle_len - 1 {
             let final_res = dp2.slow_extract(final_idx);

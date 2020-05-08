@@ -52,6 +52,7 @@ pub trait Jewel: fmt::Display {
     /// Overwrite a res vector to reduce memory allocations
     unsafe fn add(a: &Self, b: &Self, res: &mut Self);
     unsafe fn adds(a: &Self, b: &Self, res: &mut Self);
+    unsafe fn andnot(a: &Self, b: &Self, res: &mut Self);
     unsafe fn cmpeq(a: &Self, b: &Self, res: &mut Self);
     unsafe fn min(a: &Self, b: &Self, res: &mut Self);
     unsafe fn max(a: &Self, b: &Self, res: &mut Self);
@@ -421,6 +422,7 @@ impl Jewel for AvxNx32x8 {
 
     operation_param2!("avx2", add, _mm256_add_epi8);
     operation_param2!("avx2", adds, _mm256_adds_epu8);
+    operation_param2!("avx2", andnot, _mm256_andnot_si256);
     operation_param2!("avx2", cmpeq, _mm256_cmpeq_epi8);
     operation_param2!("avx2", min, _mm256_min_epu8);
     operation_param2!("avx2", max, _mm256_max_epu8);
@@ -727,6 +729,7 @@ impl Jewel for Avx1x32x8 {
 
     single_operation_param2!("avx2", add, _mm256_add_epi8);
     single_operation_param2!("avx2", adds, _mm256_adds_epu8);
+    single_operation_param2!("avx2", andnot, _mm256_andnot_si256);
     single_operation_param2!("avx2", cmpeq, _mm256_cmpeq_epi8);
     single_operation_param2!("avx2", min, _mm256_min_epu8);
     single_operation_param2!("avx2", max, _mm256_max_epu8);
