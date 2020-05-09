@@ -27,9 +27,16 @@ impl EditCosts {
             transpose_cost: transpose_cost
         }
     }
+
+    fn check_search(&self) {
+        if let Some(cost) = self.transpose_cost {
+            assert!(cost <= self.gap_cost);
+        }
+    }
 }
 
 pub const LEVENSHTEIN_COSTS: EditCosts = EditCosts{mismatch_cost: 1, gap_cost: 1, transpose_cost: None};
+pub const DAMERAU_COSTS: EditCosts = EditCosts{mismatch_cost: 1, gap_cost: 1, transpose_cost: Some(1)};
 
 pub fn levenshtein_naive(a: &[u8], b: &[u8]) -> u32 {
     levenshtein_naive_with_opts(a, b, false, LEVENSHTEIN_COSTS).0
@@ -739,6 +746,8 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
         return vec![];
     }
 
+    costs.check_search();
+
     let len = needle_len + 1;
     let iter_len = if anchored {
         std::cmp::min(haystack_len, needle_len + (k as usize) / (costs.gap_cost as usize))
@@ -796,8 +805,8 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
                 length2[j] = length1[j - 1] + 1;
             }
 
-            if allow_transpose && i > 1 && j > 1
-                && needle[j - 1] == haystack[i - 2] && needle[j - 2] == haystack[i - 1] {
+            if allow_transpose && i > 0 && j > 1
+                && needle[j - 1] == haystack[i - 1] && needle[j - 2] == haystack[i] {
                 let transpose = dp0[j - 2] + transpose_cost;
 
                 if transpose <= dp2[j] {
@@ -841,6 +850,8 @@ pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32,
         return vec![];
     }
 
+    costs.check_search();
+
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         let unit_k = k / (costs.gap_cost as u32);
@@ -870,7 +881,7 @@ pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32,
     levenshtein_search_naive_with_opts(needle, haystack, k, search_type, costs, anchored)
 }
 
-unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {
+unsafe fn levenshtein_search_simd_core<T: Jewel + std::fmt::Display>(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
     let mut dp0 = T::repeating_max(needle_len);
@@ -886,7 +897,7 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
     let mut length2 = T::repeating(0, needle_len);
 
     let ones = T::repeating(1, needle_len);
-    let ones = T::repeating(2, needle_len);
+    let twos = T::repeating(2, needle_len);
 
     // the suffix of haystack can be ignored if needle must be anchored
     let len = if anchored {
@@ -902,15 +913,13 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
     // load needle characters into needle_window in reversed order
     let mut needle_window = T::repeating(0, needle_len);
     needle_window.slow_loadu(needle_window.upper_bound() - 1, needle.as_ptr(), needle_len, true);
-    let mut needle_prev_window = T::repeating(0, needle_len);
-    needle_prev_window.slow_loadu(needle_prev_window.upper_bound() - 2, needle.as_ptr(), needle_len - 1, true);
 
     let mut haystack_window = T::repeating(0, needle_len);
-    let mut haystack_prev_window = T::repeating(0, needle_len);
     let mut haystack_idx = 0usize;
     let mut curr_k = k;
 
-    let mut match_mask = T::repeating(0, needle_len);
+    let mut match_mask0 = T::repeating(0, needle_len);
+    let mut match_mask1 = T::repeating(0, needle_len);
     let mut match_mask_cost = T::repeating(0, needle_len);
     let mut sub = T::repeating(0, needle_len);
     let mut sub_length = T::repeating(0, needle_len);
@@ -946,23 +955,23 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
 
     for i in 1..len {
         // shift the haystack window
-        T::shift_left_1(&haystack_prev_window, &mut haystack_window);
+        haystack_window.shift_left_1_mut();
 
         if haystack_idx < haystack_len {
             haystack_window.insert_last_0(*haystack.get_unchecked(haystack_idx) as u32);
             haystack_idx += 1;
         }
 
-        T::cmpeq(&needle_window, &haystack_window, &mut match_mask);
-        T::andnot(&match_mask, &mismatch_cost, &mut match_mask_cost);
+        T::cmpeq(&needle_window, &haystack_window, &mut match_mask1);
+        T::andnot(&match_mask1, &mismatch_cost, &mut match_mask_cost);
 
         // match/mismatch
         T::shift_left_1(&dp1, &mut sub);
 
-        if anchored {
+        if anchored && i > 1 {
             // dp1 is 2 diagonals behind the current i
             // must be capped at k to prevent overflow when inserting
-            sub.insert_last_0(std::cmp::min(std::cmp::max(0, i as u32 - 2) * (costs.gap_cost as u32), k + 1));
+            sub.insert_last_0(std::cmp::min((i as u32 - 2) * (costs.gap_cost as u32), k + 1));
         }
 
         sub.adds_mut(&match_mask_cost);
@@ -987,11 +996,15 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
         T::shift_left_1(&length2, &mut haystack_gap_length); // zeros are shifted in
 
         if allow_transpose {
-            T::cmpeq(&needle_prev_window, &haystack_window, &mut transpose_mask);
-            T::cmpeq(&needle_window, &haystack_prev_window, &mut transpose); // temp reuse transpose vector
-            match_mask.andnot_mut(&transpose);
-            transpose_mask.and_mut(&match_mask);
+            T::shift_left_1(&match_mask0, &mut transpose); // reuse transpose
+            T::andnot(&match_mask1, &transpose, &mut transpose_mask);
+            transpose_mask.and_mut(&match_mask0);
             dp0.shift_left_1_mut();
+
+            if anchored && i > 3 {
+                dp0.insert_last_0(std::cmp::min((i as u32 - 4) * (costs.gap_cost as u32), k + 1));
+            }
+
             dp0.shift_left_1_mut();
             T::adds(&dp0, &transpose_cost, &mut transpose);
             T::adds(&length0, &twos, &mut transpose_length);
@@ -1012,7 +1025,7 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
         std::mem::swap(&mut length_temp, &mut length1);
         std::mem::swap(&mut length1, &mut length2);
 
-        std::mem::swap(&mut haystack_window, &mut haystack_prev_window);
+        std::mem::swap(&mut match_mask0, &mut match_mask1);
 
         if i >= needle_len - 1 {
             let final_res = dp2.slow_extract(final_idx);
