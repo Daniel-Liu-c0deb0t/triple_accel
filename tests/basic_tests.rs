@@ -443,8 +443,6 @@ fn test_basic_levenshtein_search_simd() {
     let b7 = b"...tseting!";
     let k7 = 1;
     res = levenshtein_search_simd_with_opts(a7, b7, k7, SearchType::All, EditCosts::new(1, 1, Some(1)), false);
-
-    println!("{:?}", res);
     assert!(res == vec![Match{start: 3, end: 7, k: 1}]);
 }
 

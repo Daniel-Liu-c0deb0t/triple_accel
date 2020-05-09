@@ -881,7 +881,7 @@ pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32,
     levenshtein_search_naive_with_opts(needle, haystack, k, search_type, costs, anchored)
 }
 
-unsafe fn levenshtein_search_simd_core<T: Jewel + std::fmt::Display>(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {
+unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
     let mut dp0 = T::repeating_max(needle_len);
@@ -1006,6 +1006,8 @@ unsafe fn levenshtein_search_simd_core<T: Jewel + std::fmt::Display>(needle: &[u
             }
 
             dp0.shift_left_1_mut();
+            length0.shift_left_1_mut();
+            length0.shift_left_1_mut();
             T::adds(&dp0, &transpose_cost, &mut transpose);
             T::adds(&length0, &twos, &mut transpose_length);
         }
