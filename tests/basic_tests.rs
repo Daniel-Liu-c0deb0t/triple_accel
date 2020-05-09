@@ -111,6 +111,11 @@ fn test_basic_levenshtein_naive() {
     let b6 = b"acbde";
     res = levenshtein_naive_with_opts(a6, b6, false, EditCosts::new(1, 1, Some(1))).0;
     assert!(res == 1);
+
+    let a7 = b"ab";
+    let b7 = b"ba";
+    res = levenshtein_naive_with_opts(a7, b7, false, EditCosts::new(1, 1, Some(1))).0;
+    assert!(res == 1);
 }
 
 #[test]
@@ -249,6 +254,12 @@ fn test_basic_levenshtein_naive_k_with_opts() {
     res = levenshtein_naive_k_with_opts(a7, b7, 1, false, EditCosts::new(1, 1, Some(1))).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.is_none());
+
+    let a8 = b"ab";
+    let b8 = b"ba";
+    res = levenshtein_naive_k_with_opts(a8, b8, 1, false, EditCosts::new(1, 1, Some(1))).unwrap();
+    assert!(res.0 == 1);
+    assert!(res.1.is_none());
 }
 
 #[test]
@@ -320,6 +331,12 @@ fn test_basic_levenshtein_simd_k_with_opts() {
     let a6 = b"abcde";
     let b6 = b"acbde";
     res = levenshtein_simd_k_with_opts(a6, b6, 2, false, EditCosts::new(1, 1, Some(1))).unwrap();
+    assert!(res.0 == 1);
+    assert!(res.1.is_none());
+
+    let a7 = b"ab";
+    let b7 = b"ba";
+    res = levenshtein_simd_k_with_opts(a7, b7, 2, false, EditCosts::new(1, 1, Some(1))).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.is_none());
 }

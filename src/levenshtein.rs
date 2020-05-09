@@ -36,7 +36,7 @@ impl EditCosts {
 }
 
 pub const LEVENSHTEIN_COSTS: EditCosts = EditCosts{mismatch_cost: 1, gap_cost: 1, transpose_cost: None};
-pub const DAMERAU_COSTS: EditCosts = EditCosts{mismatch_cost: 1, gap_cost: 1, transpose_cost: Some(1)};
+pub const RDAMERAU_COSTS: EditCosts = EditCosts{mismatch_cost: 1, gap_cost: 1, transpose_cost: Some(1)};
 
 pub fn levenshtein_naive(a: &[u8], b: &[u8]) -> u32 {
     levenshtein_naive_with_opts(a, b, false, LEVENSHTEIN_COSTS).0
@@ -410,21 +410,17 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
     // copy in half of k1/k2 number of characters
     // these characters are placed in the second half of b windows
     // since a windows are reversed, the characters are placed in reverse in the first half of b windows
-    let mut a_k1_prev_window = T::repeating(0, max_len);
     let mut a_k1_window = T::repeating(0, max_len);
-    a_k1_prev_window.slow_loadu(k1_div2 - 1, a.as_ptr(), std::cmp::min(k1_div2, a_len), true);
+    a_k1_window.slow_loadu(k1_div2 - 1, a.as_ptr(), std::cmp::min(k1_div2, a_len), true);
 
-    let mut b_k1_prev_window = T::repeating(0, max_len);
     let mut b_k1_window = T::repeating(0, max_len);
-    b_k1_prev_window.slow_loadu(k1_div2 + 1, b.as_ptr(), std::cmp::min(k1_div2, b_len), false);
+    b_k1_window.slow_loadu(k1_div2 + 1, b.as_ptr(), std::cmp::min(k1_div2, b_len), false);
 
-    let mut a_k2_prev_window = T::repeating(0, max_len);
     let mut a_k2_window = T::repeating(0, max_len);
-    a_k2_prev_window.slow_loadu(k2_div2 - 1, a.as_ptr(), std::cmp::min(k2_div2, a_len), true);
+    a_k2_window.slow_loadu(k2_div2 - 1, a.as_ptr(), std::cmp::min(k2_div2, a_len), true);
 
-    let mut b_k2_prev_window = T::repeating(0, max_len);
     let mut b_k2_window = T::repeating(0, max_len);
-    b_k2_prev_window.slow_loadu(k2_div2, b.as_ptr(), std::cmp::min(k2_div2, b_len), false);
+    b_k2_window.slow_loadu(k2_div2, b.as_ptr(), std::cmp::min(k2_div2, b_len), false);
 
     // used to keep track of the next characters to place in the windows
     let mut k1_idx = k1_div2 - 1;
@@ -457,11 +453,11 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
     let threes = T::repeating(3, max_len);
 
     let mut sub = T::repeating(0, max_len);
-    let mut match_mask = T::repeating(0, max_len);
+    let mut match_mask0 = T::repeating(0, max_len);
+    let mut match_mask1 = T::repeating(0, max_len);
     let mut a_gap = T::repeating(0, max_len);
     let mut b_gap = T::repeating(0, max_len);
     let mut transpose = T::repeating(0, max_len);
-    let mut transpose_mask = T::repeating(0, max_len);
 
     let mismatch_cost = T::repeating(costs.mismatch_cost as u32, max_len);
     let gap_cost = T::repeating(costs.gap_cost as u32, max_len);
@@ -522,33 +518,33 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
         k2_idx += 1;
 
         // move windows for the strings a and b
-        T::shift_right_1(&a_k1_prev_window, &mut a_k1_window);
+        a_k1_window.shift_right_1_mut();
 
         if k1_idx < a_len {
             a_k1_window.insert_first(*a.get_unchecked(k1_idx) as u32);
         }
 
-        T::shift_left_1(&b_k1_prev_window, &mut b_k1_window);
+        b_k1_window.shift_left_1_mut();
 
         if k1_idx < b_len {
             b_k1_window.insert_last_1(*b.get_unchecked(k1_idx) as u32); // k1 - 1
         }
 
-        T::shift_right_1(&a_k2_prev_window, &mut a_k2_window);
+        a_k2_window.shift_right_1_mut();
 
         if k2_idx < a_len {
             a_k2_window.insert_first(*a.get_unchecked(k2_idx) as u32);
         }
 
-        T::shift_left_1(&b_k2_prev_window, &mut b_k2_window);
+        b_k2_window.shift_left_1_mut();
 
         if k2_idx < b_len {
             b_k2_window.insert_last_2(*b.get_unchecked(k2_idx) as u32);
         }
 
         // (anti) diagonal that matches in the a and b windows
-        T::cmpeq(&a_k1_window, &b_k1_window, &mut match_mask);
-        T::andnot(&match_mask, &mismatch_cost, &mut sub);
+        T::cmpeq(&a_k1_window, &b_k1_window, &mut match_mask1);
+        T::andnot(&match_mask1, &mismatch_cost, &mut sub);
         sub.adds_mut(&dp1);
         // cost of gaps in a
         T::shift_right_1(&dp2, &mut a_gap);
@@ -558,10 +554,9 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
         T::adds(&dp2, &gap_cost, &mut b_gap);
 
         if allow_transpose {
-            T::cmpeq(&a_k1_prev_window, &b_k1_window, &mut transpose_mask);
-            T::cmpeq(&a_k1_window, &b_k1_prev_window, &mut transpose); // temp reuse transpose vector
-            match_mask.andnot_mut(&transpose);
-            transpose_mask.and_mut(&match_mask);
+            T::shift_right_1(&match_mask0, &mut transpose); // reuse transpose
+            transpose.and_mut(&match_mask0);
+            T::andnot(&match_mask1, &transpose, &mut match_mask0); // reuse match_mask0 to represent transpose mask
             T::adds(&dp0, &transpose_cost, &mut transpose);
         }
 
@@ -570,8 +565,10 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
             let mut args = T::triple_argmin(&sub, &a_gap, &b_gap, &mut dp0);
 
             if allow_transpose {
-                dp0.blendv_mut(&transpose, &transpose_mask);
-                args.blendv_mut(&threes, &transpose_mask);
+                // blend using transpose mask
+                dp0.blendv_mut(&transpose, &match_mask0);
+                args.blendv_mut(&threes, &match_mask0);
+                std::mem::swap(&mut match_mask0, &mut match_mask1);
             }
 
             traceback_arr.push(args);
@@ -580,7 +577,9 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
             dp0.min_mut(&sub);
 
             if allow_transpose {
-                dp0.blendv_mut(&transpose, &transpose_mask);
+                // blend using transpose mask
+                dp0.blendv_mut(&transpose, &match_mask0);
+                std::mem::swap(&mut match_mask0, &mut match_mask1);
             }
         }
 
@@ -588,12 +587,9 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
         std::mem::swap(&mut dp_temp, &mut dp1);
         std::mem::swap(&mut dp1, &mut dp2);
 
-        std::mem::swap(&mut a_k1_window, &mut a_k1_prev_window);
-        std::mem::swap(&mut b_k1_window, &mut b_k1_prev_window);
-
         // (anti) diagonal that matches in the a and b windows
-        T::cmpeq(&a_k2_window, &b_k2_window, &mut match_mask);
-        T::andnot(&match_mask, &mismatch_cost, &mut sub);
+        T::cmpeq(&a_k2_window, &b_k2_window, &mut match_mask1);
+        T::andnot(&match_mask1, &mismatch_cost, &mut sub);
         sub.adds_mut(&dp1);
         // cost of gaps in b
         T::shift_left_1(&dp2, &mut b_gap);
@@ -603,10 +599,9 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
         T::adds(&dp2, &gap_cost, &mut a_gap);
 
         if allow_transpose {
-            T::cmpeq(&a_k2_prev_window, &b_k2_window, &mut transpose_mask);
-            T::cmpeq(&a_k2_window, &b_k2_prev_window, &mut transpose); // temp reuse transpose vector
-            match_mask.andnot_mut(&transpose);
-            transpose_mask.and_mut(&match_mask);
+            T::shift_left_1(&match_mask0, &mut transpose); // reuse transpose
+            transpose.and_mut(&match_mask0);
+            T::andnot(&match_mask1, &transpose, &mut match_mask0); // reuse match_mask0 to represent transpose mask
             T::adds(&dp0, &transpose_cost, &mut transpose);
         }
 
@@ -615,8 +610,10 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
             let mut args = T::triple_argmin(&sub, &a_gap, &b_gap, &mut dp0);
 
             if allow_transpose {
-                dp0.blendv_mut(&transpose, &transpose_mask);
-                args.blendv_mut(&threes, &transpose_mask);
+                // blend using transpose mask
+                dp0.blendv_mut(&transpose, &match_mask0);
+                args.blendv_mut(&threes, &match_mask0);
+                std::mem::swap(&mut match_mask0, &mut match_mask1);
             }
 
             traceback_arr.push(args);
@@ -625,16 +622,15 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
             dp0.min_mut(&sub);
 
             if allow_transpose {
-                dp0.blendv_mut(&transpose, &transpose_mask);
+                // blend using transpose mask
+                dp0.blendv_mut(&transpose, &match_mask0);
+                std::mem::swap(&mut match_mask0, &mut match_mask1);
             }
         }
 
         std::mem::swap(&mut dp0, &mut dp_temp);
         std::mem::swap(&mut dp_temp, &mut dp1);
         std::mem::swap(&mut dp1, &mut dp2);
-
-        std::mem::swap(&mut a_k2_window, &mut a_k2_prev_window);
-        std::mem::swap(&mut b_k2_window, &mut b_k2_prev_window);
     }
 
     let final_res = if ends_with_k2 {
@@ -929,7 +925,6 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
     let mut haystack_gap_length = T::repeating(0, needle_len);
     let mut transpose = T::repeating(0, needle_len);
     let mut transpose_length = T::repeating(0, needle_len);
-    let mut transpose_mask = T::repeating(0, needle_len);
 
     let mismatch_cost = T::repeating(costs.mismatch_cost as u32, needle_len);
     let gap_cost = T::repeating(costs.gap_cost as u32, needle_len);
@@ -997,8 +992,8 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
 
         if allow_transpose {
             T::shift_left_1(&match_mask0, &mut transpose); // reuse transpose
-            T::andnot(&match_mask1, &transpose, &mut transpose_mask);
-            transpose_mask.and_mut(&match_mask0);
+            transpose.and_mut(&match_mask0);
+            T::andnot(&match_mask1, &transpose, &mut match_mask0); // reuse match_mask0 to represent transpose mask
             dp0.shift_left_2_mut();
 
             if anchored && i > 3 {
@@ -1014,8 +1009,10 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
                              &needle_gap_length, &haystack_gap_length, &mut dp0, &mut length0);
 
         if allow_transpose {
-            dp0.blendv_mut(&transpose, &transpose_mask);
-            length0.blendv_mut(&transpose_length, &transpose_mask);
+            // blend using transpose mask
+            dp0.blendv_mut(&transpose, &match_mask0);
+            length0.blendv_mut(&transpose_length, &match_mask0);
+            std::mem::swap(&mut match_mask0, &mut match_mask1);
         }
 
         std::mem::swap(&mut dp0, &mut dp_temp);
@@ -1024,8 +1021,6 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
         std::mem::swap(&mut length0, &mut length_temp);
         std::mem::swap(&mut length_temp, &mut length1);
         std::mem::swap(&mut length1, &mut length2);
-
-        std::mem::swap(&mut match_mask0, &mut match_mask1);
 
         if i >= needle_len - 1 {
             let final_res = dp2.slow_extract(final_idx);
