@@ -999,15 +999,13 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
             T::shift_left_1(&match_mask0, &mut transpose); // reuse transpose
             T::andnot(&match_mask1, &transpose, &mut transpose_mask);
             transpose_mask.and_mut(&match_mask0);
-            dp0.shift_left_1_mut();
+            dp0.shift_left_2_mut();
 
             if anchored && i > 3 {
-                dp0.insert_last_0(std::cmp::min((i as u32 - 2) * (costs.gap_cost as u32), k + 1));
+                dp0.insert_last_1(std::cmp::min((i as u32 - 2) * (costs.gap_cost as u32), k + 1));
             }
 
-            dp0.shift_left_1_mut();
-            length0.shift_left_1_mut();
-            length0.shift_left_1_mut();
+            length0.shift_left_2_mut();
             T::adds(&dp0, &transpose_cost, &mut transpose);
             T::adds(&length0, &twos, &mut transpose_length);
         }

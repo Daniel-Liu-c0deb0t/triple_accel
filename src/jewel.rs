@@ -47,6 +47,7 @@ pub trait Jewel: fmt::Display {
     unsafe fn max_mut(&mut self, b: &Self);
     unsafe fn blendv_mut(&mut self, b: &Self, mask: &Self);
     unsafe fn shift_left_1_mut(&mut self);
+    unsafe fn shift_left_2_mut(&mut self);
     unsafe fn shift_right_1_mut(&mut self);
 
     /// Overwrite a res vector to reduce memory allocations
@@ -406,6 +407,23 @@ impl Jewel for AvxNx32x8 {
 
     #[target_feature(enable = "avx2")]
     #[inline]
+    unsafe fn shift_left_2_mut(&mut self) {
+        for i in 0..(self.v.len() - 1) {
+            let curr = *self.v.get_unchecked(i);
+            // permute concatenates the second half of the current vector and the first half of the next vector
+            *self.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
+                _mm256_permute2x128_si256(curr, *self.v.get_unchecked(i + 1), 0b00100001i32), curr, 2i32);
+        }
+
+        // last one gets to shift in zeros
+        let last = self.v.len() - 1;
+        let curr = *self.v.get_unchecked(last);
+        // permute concatenates the second half of the last vector and a vector of zeros
+        *self.v.get_unchecked_mut(last) = _mm256_alignr_epi8(_mm256_permute2x128_si256(curr, curr, 0b10000001i32), curr, 2i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
     unsafe fn shift_right_1_mut(&mut self) {
         for i in (1..self.v.len()).rev() {
             let curr = *self.v.get_unchecked(i);
@@ -718,6 +736,13 @@ impl Jewel for Avx1x32x8 {
     unsafe fn shift_left_1_mut(&mut self) {
         // permute concatenates the second half of the last vector and a vector of zeros
         self.v = _mm256_alignr_epi8(_mm256_permute2x128_si256(self.v, self.v, 0b10000001i32), self.v, 1i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn shift_left_2_mut(&mut self) {
+        // permute concatenates the second half of the last vector and a vector of zeros
+        self.v = _mm256_alignr_epi8(_mm256_permute2x128_si256(self.v, self.v, 0b10000001i32), self.v, 2i32);
     }
 
     #[target_feature(enable = "avx2")]
