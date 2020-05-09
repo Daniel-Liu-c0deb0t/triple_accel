@@ -968,10 +968,10 @@ unsafe fn levenshtein_search_simd_core<T: Jewel + std::fmt::Display>(needle: &[u
         // match/mismatch
         T::shift_left_1(&dp1, &mut sub);
 
-        if anchored && i > 1 {
+        if anchored {
             // dp1 is 2 diagonals behind the current i
             // must be capped at k to prevent overflow when inserting
-            sub.insert_last_0(std::cmp::min((i as u32 - 2) * (costs.gap_cost as u32), k + 1));
+            sub.insert_last_0(std::cmp::min((i as u32 - 1) * (costs.gap_cost as u32), k + 1));
         }
 
         sub.adds_mut(&match_mask_cost);
@@ -988,7 +988,7 @@ unsafe fn levenshtein_search_simd_core<T: Jewel + std::fmt::Display>(needle: &[u
 
         if anchored {
             // dp2 is one diagonal behind the current i
-            sub.insert_last_0(std::cmp::min((i as u32 - 1) * (costs.gap_cost as u32), k + 1));
+            haystack_gap.insert_last_0(std::cmp::min((i as u32) * (costs.gap_cost as u32), k + 1));
         }
 
         haystack_gap.adds_mut(&gap_cost);
@@ -1002,7 +1002,7 @@ unsafe fn levenshtein_search_simd_core<T: Jewel + std::fmt::Display>(needle: &[u
             dp0.shift_left_1_mut();
 
             if anchored && i > 3 {
-                dp0.insert_last_0(std::cmp::min((i as u32 - 4) * (costs.gap_cost as u32), k + 1));
+                dp0.insert_last_0(std::cmp::min((i as u32 - 2) * (costs.gap_cost as u32), k + 1));
             }
 
             dp0.shift_left_1_mut();
