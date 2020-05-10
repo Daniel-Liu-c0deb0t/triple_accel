@@ -124,8 +124,13 @@ pub fn levenshtein_naive_with_opts(a: &[u8], b: &[u8], trace_on: bool, costs: Ed
     }
 
     if trace_on {
-        let mut res: Vec<Edit> = Vec::with_capacity(
-            (((dp1[a_new_len] / std::cmp::min(mismatch_cost, gap_cost)) << 1) + 1) as usize);
+        let mut upper_bound_edits = dp1[a_new_len] / std::cmp::min(mismatch_cost, gap_cost);
+
+        if allow_transpose {
+            upper_bound_edits = std::cmp::max(upper_bound_edits, (dp1[a_new_len] >> 1) / transpose_cost + 1);
+        }
+
+        let mut res: Vec<Edit> = Vec::with_capacity(((upper_bound_edits << 1) + 1) as usize);
         let mut i = b_new_len;
         let mut j = a_new_len;
 
@@ -288,8 +293,13 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
         return Some((dp1[hi - lo - 1], None));
     }
 
-    let mut res: Vec<Edit> = Vec::with_capacity(
-        (((dp1[hi - lo - 1] / std::cmp::min(mismatch_cost, gap_cost)) << 1) + 1) as usize);
+    let mut upper_bound_edits = dp1[hi - lo - 1] / std::cmp::min(mismatch_cost, gap_cost);
+
+    if allow_transpose {
+        upper_bound_edits = std::cmp::max(upper_bound_edits, (dp1[hi - lo - 1] >> 1) / transpose_cost + 1);
+    }
+
+    let mut res: Vec<Edit> = Vec::with_capacity(((upper_bound_edits << 1) + 1) as usize);
     let mut i = a_new_len;
     let mut j = b_new_len;
 
@@ -345,7 +355,7 @@ pub fn levenshtein_simd_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool, 
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        let unit_k = k / (costs.gap_cost as u32);
+        let unit_k = std::cmp::min(k / (costs.gap_cost as u32), std::cmp::max(a.len(), b.len()) as u32);
 
         // note: do not use the max_value, because it indicates overflow/inaccuracy
         if is_x86_feature_detected!("avx2") {
@@ -378,7 +388,7 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
     let a_len = a.len();
     let b = if swap {a_old} else {b_old};
     let b_len = b.len();
-    let unit_k = (k / (costs.gap_cost as u32)) as usize;
+    let unit_k = std::cmp::min((k / (costs.gap_cost as u32)) as usize, b_len);
 
     if b_len - a_len > unit_k {
         return None;
@@ -648,7 +658,12 @@ unsafe fn levenshtein_simd_core<T: Jewel>(a_old: &[u8], b_old: &[u8], k: u32, tr
     }
 
     // upper bound the number of edit operations, to reduce memory allocations for saving the traceback
-    let upper_bound_edits = final_res / (std::cmp::min(costs.mismatch_cost, costs.gap_cost) as u32);
+    let mut upper_bound_edits = final_res / (std::cmp::min(costs.mismatch_cost, costs.gap_cost) as u32);
+
+    if let Some(cost) = costs.transpose_cost {
+        upper_bound_edits = std::cmp::max(upper_bound_edits, (final_res >> 1) / (cost as u32) + 1);
+    }
+
     Some((final_res, Some(traceback(&traceback_arr, upper_bound_edits as usize, final_idx, a, b, swap, ends_with_k2))))
 }
 
@@ -659,7 +674,7 @@ unsafe fn traceback<T: Jewel>(arr: &[T], k: usize, mut idx: usize, a: &[u8], b: 
 
     // last diagonal may overshoot, so ignore it
     let mut arr_idx = arr.len() - 1 - (if is_k2 {0} else {1});
-    let mut res: Vec<Edit> = Vec::with_capacity((k << 2) + 1);
+    let mut res: Vec<Edit> = Vec::with_capacity((k << 1) + 1);
 
     while arr_idx > 0 {
         // each Jewel vector in arr is only visited once, so extract (which is costly) is fine
@@ -731,7 +746,9 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec<E
 }
 
 pub fn levenshtein_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
-    levenshtein_search_naive_with_opts(needle, haystack, needle.len() as u32, SearchType::Best, LEVENSHTEIN_COSTS, false)
+    let max_k = std::cmp::min((needle.len() as u32) * (LEVENSHTEIN_COSTS.mismatch_cost as u32),
+                              (needle.len() as u32) * (LEVENSHTEIN_COSTS.gap_cost as u32) * 2);
+    levenshtein_search_naive_with_opts(needle, haystack, max_k, SearchType::Best, LEVENSHTEIN_COSTS, false)
 }
 
 pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {
@@ -838,7 +855,9 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
 }
 
 pub fn levenshtein_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
-    levenshtein_search_simd_with_opts(needle, haystack, needle.len() as u32, SearchType::Best, LEVENSHTEIN_COSTS, false)
+    let max_k = std::cmp::min((needle.len() as u32) * (LEVENSHTEIN_COSTS.mismatch_cost as u32),
+                              (needle.len() as u32) * (LEVENSHTEIN_COSTS.gap_cost as u32) * 2);
+    levenshtein_search_simd_with_opts(needle, haystack, max_k, SearchType::Best, LEVENSHTEIN_COSTS, false)
 }
 
 pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {

@@ -24,12 +24,13 @@ fn test_basic_hamming_search_naive() {
 #[test]
 fn test_basic_hamming_search_simd() {
     let a1 = b"abc";
-    let b1 = b"  abc  abb";
+    let b1 = b"  abc  abb aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     let mut res = hamming_search_simd_with_opts(a1, b1, 1, SearchType::All);
+    println!("{:?}", res);
     assert!(res == vec![Match{start: 2, end: 5, k: 0}, Match{start: 7, end: 10, k: 1}]);
 
     let a2 = b"abc";
-    let b2 = b"  abc  abb";
+    let b2 = b"  abc  abb aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     res = hamming_search_simd(a2, b2);
     assert!(res == vec![Match{start: 2, end: 5, k: 0}]);
 }
@@ -66,16 +67,16 @@ fn test_basic_hamming_words_128() {
 
 #[test]
 fn test_basic_hamming_simd_movemask() {
-    let a = b"abc";
-    let b = b"abd";
+    let a = b"abcaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let b = b"abdaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     let dist = hamming_simd_movemask(a, b);
     assert!(dist == 1);
 }
 
 #[test]
 fn test_basic_hamming_simd_parallel() {
-    let a = b"abc";
-    let b = b"abd";
+    let a = b"abcaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let b = b"abdaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     let dist = hamming_simd_parallel(a, b);
     assert!(dist == 1);
 }
