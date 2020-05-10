@@ -419,7 +419,7 @@ unsafe fn hamming_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: 
     let mut curr_k = k;
 
     for i in 0..len {
-        let final_res = T::vector_count_mismatches(&needle_vector, haystack_ptr.offset(i as isize));
+        let final_res = T::vector_count_mismatches(&needle_vector, haystack_ptr.offset(i as isize), needle_len);
 
         if final_res <= curr_k {
             res.push(Match{start: i, end: i + needle_len, k: final_res});

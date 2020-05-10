@@ -36,7 +36,7 @@ pub trait Jewel: fmt::Display {
     /// For speed, the `count_mismatches` functions do not require creating a Jewel vector.
     unsafe fn mm_count_mismatches(a_ptr: *const u8, b_ptr: *const u8, len: usize) -> u32;
     unsafe fn count_mismatches(a_ptr: *const u8, b_ptr: *const u8, len: usize) -> u32;
-    unsafe fn vector_count_mismatches(a: &Self, b_ptr: *const u8) -> u32;
+    unsafe fn vector_count_mismatches(a: &Self, b_ptr: *const u8, len: usize) -> u32;
 
     unsafe fn add_mut(&mut self, b: &Self);
     unsafe fn adds_mut(&mut self, b: &Self);
@@ -331,7 +331,7 @@ impl Jewel for AvxNx32x8 {
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn vector_count_mismatches(a: &Self, b_ptr: *const u8) -> u32 {
+    unsafe fn vector_count_mismatches(a: &Self, b_ptr: *const u8, len: usize) -> u32 {
         let refresh_len = (a.v.len() / 255) as isize;
         let zeros = _mm256_setzero_si256();
         let mut sad = zeros;
@@ -369,7 +369,7 @@ impl Jewel for AvxNx32x8 {
         let res = *sad_arr.get_unchecked(0) + *sad_arr.get_unchecked(2)
             + *sad_arr.get_unchecked(4) + *sad_arr.get_unchecked(6);
 
-        (a.v.len() << 5) as u32 - res
+        len as u32 - res
     }
 
     operation_mut_param2!("avx2", add_mut, _mm256_add_epi8);
@@ -713,7 +713,7 @@ impl Jewel for Avx1x32x8 {
 
     #[target_feature(enable = "avx2")]
     #[inline]
-    unsafe fn vector_count_mismatches(_a: &Self, _b_ptr: *const u8) -> u32 {
+    unsafe fn vector_count_mismatches(_a: &Self, _b_ptr: *const u8, _len: usize) -> u32 {
         unimplemented!();
     }
 
