@@ -1,1 +1,1 @@
-RUSTFLAGS="-C target-cpu=native --emit llvm-ir,asm" cargo build --release
+RUSTFLAGS="--emit llvm-ir,asm" cargo build --release

@@ -295,6 +295,8 @@ pub fn hamming_simd_parallel(a: &[u8], b: &[u8]) -> u32 {
     hamming_naive(a, b)
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2,sse4.1")]
 unsafe fn hamming_simd_parallel_core<T: Jewel>(a: &[u8], b: &[u8]) -> u32 {
     T::count_mismatches(a.as_ptr(), b.as_ptr(), a.len())
 }
@@ -333,6 +335,8 @@ pub fn hamming_simd_movemask(a: &[u8], b: &[u8]) -> u32 {
     hamming_naive(a, b)
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2,sse4.1")]
 unsafe fn hamming_simd_movemask_core<T: Jewel>(a: &[u8], b: &[u8]) -> u32 {
     T::mm_count_mismatches(a.as_ptr(), b.as_ptr(), a.len())
 }
@@ -408,6 +412,8 @@ pub fn hamming_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32, sea
     hamming_search_naive_with_opts(needle, haystack, k, search_type)
 }
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2,sse4.1")]
 unsafe fn hamming_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType) -> Vec<Match> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
