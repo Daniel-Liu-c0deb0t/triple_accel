@@ -1,1 +1,1 @@
-RUSTFLAGS="-C inline-threshold=1000" cargo build --release
+RUSTFLAGS="-C target-cpu=native" cargo build --release

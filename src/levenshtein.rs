@@ -1021,7 +1021,7 @@ unsafe fn levenshtein_search_simd_core<T: Jewel>(needle: &[u8], haystack: &[u8],
 
             length0.shift_left_2_mut();
             T::adds(&dp0, &transpose_cost, &mut transpose);
-            T::adds(&length0, &twos, &mut transpose_length);
+            T::add(&length0, &twos, &mut transpose_length);
         }
 
         T::triple_min_length(&sub, &needle_gap, &haystack_gap, &sub_length,

@@ -1,1 +1,1 @@
-RUSTFLAGS="-C inline-threshold=1000" cargo bench "$@"
+RUSTFLAGS="-C target-cpu=native" cargo bench "$@"
