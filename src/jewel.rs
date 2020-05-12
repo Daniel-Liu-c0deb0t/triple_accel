@@ -17,6 +17,8 @@ pub trait Jewel: fmt::Display {
     /// Figure out the length of the created vector, which may
     /// be higher than the length given by the caller.
     fn upper_bound(&self) -> usize;
+    /// Figure out the length if it is static.
+    fn static_upper_bound() -> usize;
 
     /// These operations are modify in place, so less memory allocations are needed
     /// on long sequences of operations.
@@ -136,6 +138,11 @@ macro_rules! create_avx_nx32x8 {
             #[inline]
             fn upper_bound(&self) -> usize {
                 self.v.len() << 5
+            }
+
+            #[inline]
+            fn static_upper_bound() -> usize {
+                $num << 5
             }
 
             #[target_feature(enable = "avx2")]
@@ -438,236 +445,10 @@ macro_rules! create_avx_nx32x8 {
     };
 }
 
+create_avx_nx32x8!(Avx1x32x8, 1);
 create_avx_nx32x8!(Avx2x32x8, 2);
 create_avx_nx32x8!(Avx4x32x8, 4);
 create_avx_nx32x8!(Avx8x32x8, 8);
-
-/// 1 x 32 x 8 vector backed with one AVX2 vector
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub struct Avx1x32x8 {
-    v: __m256i
-}
-
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-impl Jewel for Avx1x32x8 {
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn repeating(val: u32, _len: usize) -> Self {
-        Self{
-            v: _mm256_set1_epi8(val as i8)
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn repeating_max(_len: usize) -> Self {
-        Self{
-            v: _mm256_set1_epi8(-1i8)
-        }
-    }
-
-    #[inline]
-    fn upper_bound(&self) -> usize {
-        32
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn slow_loadu(&mut self, idx: usize, ptr: *const u8, len: usize, reverse: bool) {
-        if len == 0 {
-            return;
-        }
-
-        let mut arr = [0u8; 32];
-        let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
-
-        for i in 0..len {
-            let curr_idx = if reverse {idx - i} else {idx + i};
-            *arr.get_unchecked_mut(curr_idx) = *ptr.offset(i as isize);
-        }
-
-        self.v = _mm256_loadu_si256(arr_ptr);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn slow_extract(&self, i: usize) -> u32 {
-        let mut arr = [0u8; 32];
-        _mm256_storeu_si256(arr.as_mut_ptr() as *mut __m256i, self.v);
-        *arr.get_unchecked(i) as u32
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn slow_insert(&mut self, i: usize, val: u32) {
-        let mut arr = [0u8; 32];
-        let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
-        _mm256_storeu_si256(arr_ptr, self.v);
-        *arr.get_unchecked_mut(i) = val as u8;
-        self.v = _mm256_loadu_si256(arr_ptr);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn insert_last_0(&mut self, val: u32) {
-        self.v = _mm256_insert_epi8(self.v, val as i8, 31i32);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn insert_last_1(&mut self, val: u32) {
-        self.v = _mm256_insert_epi8(self.v, val as i8, 30i32);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn insert_last_2(&mut self, val: u32) {
-        self.v = _mm256_insert_epi8(self.v, val as i8, 29i32);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn insert_last_max(&mut self) {
-        self.v = _mm256_insert_epi8(self.v, -1i8, 31i32);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn insert_first(&mut self, val: u32) {
-        self.v = _mm256_insert_epi8(self.v, val as i8, 0i32);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn insert_first_max(&mut self) {
-        self.v = _mm256_insert_epi8(self.v, -1i8, 0i32);
-    }
-
-    single_operation_mut_param2!("avx2", add_mut, _mm256_add_epi8);
-    single_operation_mut_param2!("avx2", adds_mut, _mm256_adds_epu8);
-    single_operation_mut_param2!("avx2", and_mut, _mm256_and_si256);
-    single_operation_mut_param2!("avx2", andnot_mut, _mm256_andnot_si256);
-    single_operation_mut_param2!("avx2", cmpeq_mut, _mm256_cmpeq_epi8);
-    single_operation_mut_param2!("avx2", min_mut, _mm256_min_epu8);
-    single_operation_mut_param2!("avx2", max_mut, _mm256_max_epu8);
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn blendv_mut(&mut self, b: &Self, mask: &Self) {
-        self.v = _mm256_blendv_epi8(self.v, b.v, mask.v);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn shift_left_1_mut(&mut self) {
-        // permute concatenates the second half of the last vector and a vector of zeros
-        self.v = _mm256_alignr_epi8(_mm256_permute2x128_si256(self.v, self.v, 0b10000001i32), self.v, 1i32);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn shift_left_2_mut(&mut self) {
-        // permute concatenates the second half of the last vector and a vector of zeros
-        self.v = _mm256_alignr_epi8(_mm256_permute2x128_si256(self.v, self.v, 0b10000001i32), self.v, 2i32);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn shift_right_1_mut(&mut self) {
-        // permute concatenates a vector of zeros and the first half of the first vector
-        self.v = _mm256_alignr_epi8(self.v, _mm256_permute2x128_si256(self.v, self.v, 0b00001000i32), 15i32);
-    }
-
-    single_operation_param2!("avx2", add, _mm256_add_epi8);
-    single_operation_param2!("avx2", adds, _mm256_adds_epu8);
-    single_operation_param2!("avx2", andnot, _mm256_andnot_si256);
-    single_operation_param2!("avx2", cmpeq, _mm256_cmpeq_epi8);
-    single_operation_param2!("avx2", min, _mm256_min_epu8);
-    single_operation_param2!("avx2", max, _mm256_max_epu8);
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn shift_left_1(a: &Self, res: &mut Self) {
-        // permute concatenates the second half of the last vector and a vector of zeros
-        res.v = _mm256_alignr_epi8(_mm256_permute2x128_si256(a.v, a.v, 0b10000001i32), a.v, 1i32);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn shift_right_1(a: &Self, res: &mut Self) {
-        // permute concatenates a vector of zeros and the first half of the first vector
-        res.v = _mm256_alignr_epi8(a.v, _mm256_permute2x128_si256(a.v, a.v, 0b00001000i32), 15i32);
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self {
-        // return the edit used in addition to doing a min operation
-        // hide latency by minimizing dependencies
-
-        let res_min1 = _mm256_min_epu8(a_gap.v, b_gap.v);
-        // a gap: 2 + -1 = 1, b gap: 2 + 0 = 2
-        let res_arg1 = _mm256_add_epi8(_mm256_set1_epi8(2), _mm256_cmpeq_epi8(a_gap.v, res_min1));
-
-        res_min.v = _mm256_min_epu8(sub.v, res_min1);
-        // sub: 0
-        let res_arg2 = _mm256_andnot_si256(_mm256_cmpeq_epi8(sub.v, res_min.v), res_arg1);
-
-        Self{
-            v: res_arg2
-        }
-    }
-
-    #[target_feature(enable = "avx2")]
-    #[inline]
-    unsafe fn triple_min_length(sub: &Self, a_gap: &Self,
-                                b_gap: &Self, sub_length: &Self, a_gap_length: &Self,
-                                b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self) {
-        // choose the length based on which edit is chosen during the min operation
-        // hide latency by minimizing dependencies
-        // secondary objective of maximizing length if edit costs equal
-        let res_min1 = _mm256_min_epu8(a_gap.v, b_gap.v);
-        let a_b_gt_mask = _mm256_cmpeq_epi8(a_gap.v, res_min1); // a gap: -1, b gap: 0
-        let mut res_length1 = _mm256_blendv_epi8(b_gap_length.v, a_gap_length.v, a_b_gt_mask); // lengths based on edits
-        let a_b_eq_mask = _mm256_cmpeq_epi8(a_gap.v, b_gap.v); // equal: -1
-        let a_b_max_len = _mm256_max_epu8(a_gap_length.v, b_gap_length.v);
-        res_length1 = _mm256_blendv_epi8(res_length1, a_b_max_len, a_b_eq_mask); // maximize length if edits equal
-
-        res_min.v = _mm256_min_epu8(sub.v, res_min1);
-        let sub_gt_mask = _mm256_cmpeq_epi8(sub.v, res_min.v); // sub: -1, prev a or b gap: 0
-        let mut res_length2 = _mm256_blendv_epi8(res_length1, sub_length.v, sub_gt_mask); // length based on edits
-        let sub_eq_mask = _mm256_cmpeq_epi8(sub.v, res_min1);
-        let sub_max_len = _mm256_max_epu8(sub_length.v, res_length1);
-        res_length2 = _mm256_blendv_epi8(res_length2, sub_max_len, sub_eq_mask); // maximize length if edits equal
-        res_length.v = res_length2;
-    }
-}
-
-// this implementation will probably only be used for debugging
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-impl fmt::Display for Avx1x32x8 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        unsafe {
-            #![target_feature(enable = "avx2")]
-            write!(f, "[")?;
-
-            let mut arr = [0u8; 32];
-            let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
-
-            _mm256_storeu_si256(arr_ptr, self.v);
-
-            for i in 0..self.upper_bound() {
-                if i == self.upper_bound() - 1 {
-                    write!(f, "{:>3}", *arr.get_unchecked(i))?;
-                }else{
-                    write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
-                }
-            }
-
-            write!(f, "]")
-        }
-    }
-}
 
 /// 1 x 16 x 8 vector backed with one SSE vector
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -695,6 +476,11 @@ impl Jewel for Sse1x16x8 {
 
     #[inline]
     fn upper_bound(&self) -> usize {
+        16
+    }
+
+    #[inline]
+    fn static_upper_bound() -> usize {
         16
     }
 
