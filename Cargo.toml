@@ -12,13 +12,13 @@ codegen-units = 1
 name = "rand_benchmarks"
 harness = false
 
-[[bench]]
-name = "jewel_benchmarks"
-harness = false
+#[[bench]]
+#name = "jewel_benchmarks"
+#harness = false
 
-[[bench]]
-name = "struct_benchmarks"
-harness = false
+#[[bench]]
+#name = "struct_benchmarks"
+#harness = false
 
 [dependencies]
 
