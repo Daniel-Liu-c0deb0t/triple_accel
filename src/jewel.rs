@@ -107,7 +107,7 @@ macro_rules! single_operation_mut_param2 {
 
 /// N x 32 x 8 vector backed with 256-bit AVX2 vectors
 macro_rules! create_avx_nx32x8 {
-    ($name:ident, $num:expr) => {
+    ($name:ident, $num:literal) => {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         pub struct $name {
             v: [__m256i; $num]
