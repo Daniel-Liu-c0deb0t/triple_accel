@@ -373,12 +373,14 @@ pub fn levenshtein_simd_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool, 
         }else if is_x86_feature_detected!("sse4.1") {
             if unit_k <= (Sse1x16x8::static_upper_bound() as u32 - 2) && k <= ((u8::max_value() - 1) as u32) {
                 return unsafe {levenshtein_simd_core_sse_1x16x8(a, b, k, trace_on, costs)};
-            }else if unit_k <= (Avx2x32x8::static_upper_bound() as u32 - 2) && k <= ((u8::max_value() - 1) as u32) {
-
-            }else if unit_k <= (Avx4x32x8::static_upper_bound() as u32 - 2) && k <= ((u8::max_value() - 1) as u32) {
-
-            }else if unit_k <= (Avx8x32x8::static_upper_bound() as u32 - 2) && k <= ((u8::max_value() - 1) as u32) {
-
+            }else if unit_k <= (Sse2x16x8::static_upper_bound() as u32 - 2) && k <= ((u8::max_value() - 1) as u32) {
+                return unsafe {levenshtein_simd_core_sse_2x16x8(a, b, k, trace_on, costs)};
+            }else if unit_k <= (Sse4x16x8::static_upper_bound() as u32 - 2) && k <= ((u8::max_value() - 1) as u32) {
+                return unsafe {levenshtein_simd_core_sse_4x16x8(a, b, k, trace_on, costs)};
+            }else if unit_k <= (Sse8x16x8::static_upper_bound() as u32 - 2) && k <= ((u8::max_value() - 1) as u32) {
+                return unsafe {levenshtein_simd_core_sse_8x16x8(a, b, k, trace_on, costs)};
+            }else if unit_k <= (Sse16x16x8::static_upper_bound() as u32 - 2) && k <= ((u8::max_value() - 1) as u32) {
+                return unsafe {levenshtein_simd_core_sse_16x16x8(a, b, k, trace_on, costs)};
             }else if k <= ((u16::max_value() - 1) as u32) {
 
             }
@@ -740,7 +742,7 @@ macro_rules! create_levenshtein_simd_core {
             res.reverse();
             res
         }
-    }
+    };
 }
 
 create_levenshtein_simd_core!(levenshtein_simd_core_avx_1x32x8, traceback_avx_1x32x8, Avx1x32x8, "avx2");
@@ -748,6 +750,10 @@ create_levenshtein_simd_core!(levenshtein_simd_core_avx_2x32x8, traceback_avx_2x
 create_levenshtein_simd_core!(levenshtein_simd_core_avx_4x32x8, traceback_avx_4x32x8, Avx4x32x8, "avx2");
 create_levenshtein_simd_core!(levenshtein_simd_core_avx_8x32x8, traceback_avx_8x32x8, Avx8x32x8, "avx2");
 create_levenshtein_simd_core!(levenshtein_simd_core_sse_1x16x8, traceback_sse_1x16x8, Sse1x16x8, "sse4.1");
+create_levenshtein_simd_core!(levenshtein_simd_core_sse_2x16x8, traceback_sse_2x16x8, Sse2x16x8, "sse4.1");
+create_levenshtein_simd_core!(levenshtein_simd_core_sse_4x16x8, traceback_sse_4x16x8, Sse4x16x8, "sse4.1");
+create_levenshtein_simd_core!(levenshtein_simd_core_sse_8x16x8, traceback_sse_8x16x8, Sse8x16x8, "sse4.1");
+create_levenshtein_simd_core!(levenshtein_simd_core_sse_16x16x8, traceback_sse_16x16x8, Sse16x16x8, "sse4.1");
 
 pub fn levenshtein_exp(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec<Edit>>) {
     let mut k = 30;
@@ -909,12 +915,14 @@ pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32,
         }else if is_x86_feature_detected!("sse4.1") {
             if needle.len() <= Sse1x16x8::static_upper_bound() && max_k <= u8::max_value() as u32 {
                 return unsafe {levenshtein_search_simd_core_sse_1x16x8(needle, haystack, k, search_type, costs, anchored)};
-            }else if needle.len() <= Avx2x32x8::static_upper_bound() && max_k <= u8::max_value() as u32 {
-
-            }else if needle.len() <= Avx4x32x8::static_upper_bound() && max_k <= u8::max_value() as u32 {
-
-            }else if needle.len() <= Avx8x32x8::static_upper_bound() && max_k <= u8::max_value() as u32 {
-
+            }else if needle.len() <= Sse2x16x8::static_upper_bound() && max_k <= u8::max_value() as u32 {
+                return unsafe {levenshtein_search_simd_core_sse_2x16x8(needle, haystack, k, search_type, costs, anchored)};
+            }else if needle.len() <= Sse4x16x8::static_upper_bound() && max_k <= u8::max_value() as u32 {
+                return unsafe {levenshtein_search_simd_core_sse_4x16x8(needle, haystack, k, search_type, costs, anchored)};
+            }else if needle.len() <= Sse8x16x8::static_upper_bound() && max_k <= u8::max_value() as u32 {
+                return unsafe {levenshtein_search_simd_core_sse_8x16x8(needle, haystack, k, search_type, costs, anchored)};
+            }else if needle.len() <= Sse16x16x8::static_upper_bound() && max_k <= u8::max_value() as u32 {
+                return unsafe {levenshtein_search_simd_core_sse_16x16x8(needle, haystack, k, search_type, costs, anchored)};
             }else if max_k <= u16::max_value() as u32 {
 
             }
@@ -1097,7 +1105,7 @@ macro_rules! create_levenshtein_search_simd_core {
 
             res
         }
-    }
+    };
 }
 
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_avx_1x32x8, Avx1x32x8, "avx2");
@@ -1105,4 +1113,8 @@ create_levenshtein_search_simd_core!(levenshtein_search_simd_core_avx_2x32x8, Av
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_avx_4x32x8, Avx4x32x8, "avx2");
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_avx_8x32x8, Avx8x32x8, "avx2");
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_1x16x8, Sse1x16x8, "sse4.1");
+create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_2x16x8, Sse2x16x8, "sse4.1");
+create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_4x16x8, Sse4x16x8, "sse4.1");
+create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_8x16x8, Sse8x16x8, "sse4.1");
+create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_16x16x8, Sse16x16x8, "sse4.1");
 

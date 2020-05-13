@@ -73,16 +73,6 @@ macro_rules! operation_param2 {
     };
 }
 
-macro_rules! single_operation_param2 {
-    ($target:literal, $fn_name:ident, $intrinsic:ident) => {
-        #[target_feature(enable = $target)]
-        #[inline]
-        unsafe fn $fn_name(a: &Self, b: &Self, res: &mut Self) {
-            res.v = $intrinsic(a.v, b.v);
-        }
-    };
-}
-
 macro_rules! operation_mut_param2 {
     ($target:literal, $fn_name:ident, $intrinsic:ident) => {
         #[target_feature(enable = $target)]
@@ -95,17 +85,7 @@ macro_rules! operation_mut_param2 {
     };
 }
 
-macro_rules! single_operation_mut_param2 {
-    ($target:literal, $fn_name:ident, $intrinsic:ident) => {
-        #[target_feature(enable = $target)]
-        #[inline]
-        unsafe fn $fn_name(&mut self, b: &Self) {
-            self.v = $intrinsic(self.v, b.v);
-        }
-    };
-}
-
-/// N x 32 x 8 vector backed with 256-bit AVX2 vectors
+/// N x 32 x 8 vector backed with 256-bit AVX vectors
 macro_rules! create_avx_nx32x8 {
     ($name:ident, $num:literal) => {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -450,232 +430,326 @@ create_avx_nx32x8!(Avx2x32x8, 2);
 create_avx_nx32x8!(Avx4x32x8, 4);
 create_avx_nx32x8!(Avx8x32x8, 8);
 
-/// 1 x 16 x 8 vector backed with one SSE vector
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub struct Sse1x16x8 {
-    v: __m128i
-}
-
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-impl Jewel for Sse1x16x8 {
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn repeating(val: u32, _len: usize) -> Self {
-        Self{
-            v: _mm_set1_epi8(val as i8)
-        }
-    }
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn repeating_max(_len: usize) -> Self {
-        Self{
-            v: _mm_set1_epi8(-1i8)
-        }
-    }
-
-    #[inline]
-    fn upper_bound(&self) -> usize {
-        16
-    }
-
-    #[inline]
-    fn static_upper_bound() -> usize {
-        16
-    }
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn slow_loadu(&mut self, idx: usize, ptr: *const u8, len: usize, reverse: bool) {
-        if len == 0 {
-            return;
+/// N x 16 x 8 vector backed with 128-bit SSE vectors
+macro_rules! create_sse_nx16x8 {
+    ($name:ident, $num:literal) => {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        pub struct $name {
+            v: [__m128i; $num]
         }
 
-        let mut arr = [0u8; 16];
-        let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        impl Jewel for $name {
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn repeating(val: u32, _len: usize) -> Self {
+                let v = [_mm_set1_epi8(val as i8); $num];
 
-        for i in 0..len {
-            let curr_idx = if reverse {idx - i} else {idx + i};
-            *arr.get_unchecked_mut(curr_idx) = *ptr.offset(i as isize);
-        }
-
-        self.v = _mm_loadu_si128(arr_ptr);
-    }
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn slow_extract(&self, i: usize) -> u32 {
-        let mut arr = [0u8; 16];
-        _mm_storeu_si128(arr.as_mut_ptr() as *mut __m128i, self.v);
-        *arr.get_unchecked(i) as u32
-    }
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn slow_insert(&mut self, i: usize, val: u32) {
-        let mut arr = [0u8; 16];
-        let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
-        _mm_storeu_si128(arr_ptr, self.v);
-        *arr.get_unchecked_mut(i) = val as u8;
-        self.v = _mm_loadu_si128(arr_ptr);
-    }
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn insert_last_0(&mut self, val: u32) {
-        self.v = _mm_insert_epi8(self.v, val as i32, 15i32);
-    }
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn insert_last_1(&mut self, val: u32) {
-        self.v = _mm_insert_epi8(self.v, val as i32, 14i32);
-    }
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn insert_last_2(&mut self, val: u32) {
-        self.v = _mm_insert_epi8(self.v, val as i32, 13i32);
-    }
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn insert_last_max(&mut self) {
-        self.v = _mm_insert_epi8(self.v, u8::max_value() as i32, 15i32);
-    }
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn insert_first(&mut self, val: u32) {
-        self.v = _mm_insert_epi8(self.v, val as i32, 0i32);
-    }
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn insert_first_max(&mut self) {
-        self.v = _mm_insert_epi8(self.v, u8::max_value() as i32, 0i32);
-    }
-
-    single_operation_mut_param2!("sse4.1", add_mut, _mm_add_epi8);
-    single_operation_mut_param2!("sse4.1", adds_mut, _mm_adds_epu8);
-    single_operation_mut_param2!("sse4.1", and_mut, _mm_and_si128);
-    single_operation_mut_param2!("sse4.1", andnot_mut, _mm_andnot_si128);
-    single_operation_mut_param2!("sse4.1", cmpeq_mut, _mm_cmpeq_epi8);
-    single_operation_mut_param2!("sse4.1", min_mut, _mm_min_epu8);
-    single_operation_mut_param2!("sse4.1", max_mut, _mm_max_epu8);
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn blendv_mut(&mut self, b: &Self, mask: &Self) {
-        self.v = _mm_blendv_epi8(self.v, b.v, mask.v);
-    }
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn shift_left_1_mut(&mut self) {
-        self.v = _mm_srli_si128(self.v, 1i32);
-    }
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn shift_left_2_mut(&mut self) {
-        self.v = _mm_srli_si128(self.v, 2i32);
-    }
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn shift_right_1_mut(&mut self) {
-        self.v = _mm_slli_si128(self.v, 1i32);
-    }
-
-    single_operation_param2!("sse4.1", add, _mm_add_epi8);
-    single_operation_param2!("sse4.1", adds, _mm_adds_epu8);
-    single_operation_param2!("sse4.1", andnot, _mm_andnot_si128);
-    single_operation_param2!("sse4.1", cmpeq, _mm_cmpeq_epi8);
-    single_operation_param2!("sse4.1", min, _mm_min_epu8);
-    single_operation_param2!("sse4.1", max, _mm_max_epu8);
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn shift_left_1(a: &Self, res: &mut Self) {
-        res.v = _mm_srli_si128(a.v, 1i32);
-    }
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn shift_right_1(a: &Self, res: &mut Self) {
-        res.v = _mm_slli_si128(a.v, 1i32);
-    }
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self {
-        // return the edit used in addition to doing a min operation
-        // hide latency by minimizing dependencies
-
-        let res_min1 = _mm_min_epu8(a_gap.v, b_gap.v);
-        // a gap: 2 + -1 = 1, b gap: 2 + 0 = 2
-        let res_arg1 = _mm_add_epi8(_mm_set1_epi8(2), _mm_cmpeq_epi8(a_gap.v, res_min1));
-
-        res_min.v = _mm_min_epu8(sub.v, res_min1);
-        // sub: 0
-        let res_arg2 = _mm_andnot_si128(_mm_cmpeq_epi8(sub.v, res_min.v), res_arg1);
-
-        Self{
-            v: res_arg2
-        }
-    }
-
-    #[target_feature(enable = "sse4.1")]
-    #[inline]
-    unsafe fn triple_min_length(sub: &Self, a_gap: &Self,
-                                b_gap: &Self, sub_length: &Self, a_gap_length: &Self,
-                                b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self) {
-        // choose the length based on which edit is chosen during the min operation
-        // hide latency by minimizing dependencies
-        // secondary objective of maximizing length if edit costs equal
-        let res_min1 = _mm_min_epu8(a_gap.v, b_gap.v);
-        let a_b_gt_mask = _mm_cmpeq_epi8(a_gap.v, res_min1); // a gap: -1, b gap: 0
-        let mut res_length1 = _mm_blendv_epi8(b_gap_length.v, a_gap_length.v, a_b_gt_mask); // lengths based on edits
-        let a_b_eq_mask = _mm_cmpeq_epi8(a_gap.v, b_gap.v); // equal: -1
-        let a_b_max_len = _mm_max_epu8(a_gap_length.v, b_gap_length.v);
-        res_length1 = _mm_blendv_epi8(res_length1, a_b_max_len, a_b_eq_mask); // maximize length if edits equal
-
-        res_min.v = _mm_min_epu8(sub.v, res_min1);
-        let sub_gt_mask = _mm_cmpeq_epi8(sub.v, res_min.v); // sub: -1, prev a or b gap: 0
-        let mut res_length2 = _mm_blendv_epi8(res_length1, sub_length.v, sub_gt_mask); // length based on edits
-        let sub_eq_mask = _mm_cmpeq_epi8(sub.v, res_min1);
-        let sub_max_len = _mm_max_epu8(sub_length.v, res_length1);
-        res_length2 = _mm_blendv_epi8(res_length2, sub_max_len, sub_eq_mask); // maximize length if edits equal
-        res_length.v = res_length2;
-    }
-}
-
-// this implementation will probably only be used for debugging
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-impl fmt::Display for Sse1x16x8 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        unsafe {
-            #![target_feature(enable = "sse4.1")]
-            write!(f, "[")?;
-
-            let mut arr = [0u8; 16];
-            let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
-
-            _mm_storeu_si128(arr_ptr, self.v);
-
-            for i in 0..self.upper_bound() {
-                if i == self.upper_bound() - 1 {
-                    write!(f, "{:>3}", *arr.get_unchecked(i))?;
-                }else{
-                    write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                Self{
+                    v: v
                 }
             }
 
-            write!(f, "]")
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn repeating_max(_len: usize) -> Self {
+                let v = [_mm_set1_epi8(-1i8); $num];
+
+                Self{
+                    v: v
+                }
+            }
+
+            #[inline]
+            fn upper_bound(&self) -> usize {
+                self.v.len() << 4
+            }
+
+            #[inline]
+            fn static_upper_bound() -> usize {
+                $num << 4
+            }
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn slow_loadu(&mut self, idx: usize, ptr: *const u8, len: usize, reverse: bool) {
+                if len == 0 {
+                    return;
+                }
+
+                let mut arr = [0u8; 16];
+                let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
+
+                for i in 0..len {
+                    let curr_idx = if reverse {idx - i} else {idx + i};
+                    let arr_idx = curr_idx & 15;
+
+                    if arr_idx == 0 || i == 0 {
+                        _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(curr_idx >> 4));
+                    }
+
+                    *arr.get_unchecked_mut(arr_idx) = *ptr.offset(i as isize);
+
+                    if arr_idx == 15 || i == len - 1 {
+                        *self.v.get_unchecked_mut(curr_idx >> 4) = _mm_loadu_si128(arr_ptr);
+                    }
+                }
+            }
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn slow_extract(&self, i: usize) -> u32 {
+                let idx = i >> 4;
+                let j = i & 15;
+                let mut arr = [0u8; 16];
+                _mm_storeu_si128(arr.as_mut_ptr() as *mut __m128i, *self.v.get_unchecked(idx));
+                *arr.get_unchecked(j) as u32
+            }
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn slow_insert(&mut self, i: usize, val: u32) {
+                let idx = i >> 4;
+                let j = i & 15;
+                let mut arr = [0u8; 16];
+                let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
+                _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(idx));
+                *arr.get_unchecked_mut(j) = val as u8;
+                *self.v.get_unchecked_mut(idx) = _mm_loadu_si128(arr_ptr);
+            }
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn insert_last_0(&mut self, val: u32) {
+                let last = self.v.len() - 1;
+                *self.v.get_unchecked_mut(last) = _mm_insert_epi8(*self.v.get_unchecked(last), val as i32, 15i32);
+            }
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn insert_last_1(&mut self, val: u32) {
+                let last = self.v.len() - 1;
+                *self.v.get_unchecked_mut(last) = _mm_insert_epi8(*self.v.get_unchecked(last), val as i32, 14i32);
+            }
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn insert_last_2(&mut self, val: u32) {
+                let last = self.v.len() - 1;
+                *self.v.get_unchecked_mut(last) = _mm_insert_epi8(*self.v.get_unchecked(last), val as i32, 13i32);
+            }
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn insert_last_max(&mut self) {
+                let last = self.v.len() - 1;
+                *self.v.get_unchecked_mut(last) = _mm_insert_epi8(*self.v.get_unchecked(last), u8::max_value() as i32, 15i32);
+            }
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn insert_first(&mut self, val: u32) {
+                *self.v.get_unchecked_mut(0) = _mm_insert_epi8(*self.v.get_unchecked(0), val as i32, 0i32);
+            }
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn insert_first_max(&mut self) {
+                *self.v.get_unchecked_mut(0) = _mm_insert_epi8(*self.v.get_unchecked(0), u8::max_value() as i32, 0i32);
+            }
+
+            operation_mut_param2!("sse4.1", add_mut, _mm_add_epi8);
+            operation_mut_param2!("sse4.1", adds_mut, _mm_adds_epu8);
+            operation_mut_param2!("sse4.1", and_mut, _mm_and_si128);
+            operation_mut_param2!("sse4.1", andnot_mut, _mm_andnot_si128);
+            operation_mut_param2!("sse4.1", cmpeq_mut, _mm_cmpeq_epi8);
+            operation_mut_param2!("sse4.1", min_mut, _mm_min_epu8);
+            operation_mut_param2!("sse4.1", max_mut, _mm_max_epu8);
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn blendv_mut(&mut self, b: &Self, mask: &Self) {
+                for i in 0..self.v.len() {
+                    *self.v.get_unchecked_mut(i) = _mm_blendv_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i), *mask.v.get_unchecked(i));
+                }
+            }
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn shift_left_1_mut(&mut self) {
+                for i in 0..(self.v.len() - 1) {
+                    *self.v.get_unchecked_mut(i) = _mm_alignr_epi8(*self.v.get_unchecked(i + 1), *self.v.get_unchecked(i), 1i32);
+                }
+
+                // last one gets to shift in zeros
+                let last = self.v.len() - 1;
+                *self.v.get_unchecked_mut(last) = _mm_srli_si128(*self.v.get_unchecked(last), 1i32);
+            }
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn shift_left_2_mut(&mut self) {
+                for i in 0..(self.v.len() - 1) {
+                    *self.v.get_unchecked_mut(i) = _mm_alignr_epi8(*self.v.get_unchecked(i + 1), *self.v.get_unchecked(i), 2i32);
+                }
+
+                // last one gets to shift in zeros
+                let last = self.v.len() - 1;
+                *self.v.get_unchecked_mut(last) = _mm_srli_si128(*self.v.get_unchecked(last), 2i32);
+            }
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn shift_right_1_mut(&mut self) {
+                for i in (1..self.v.len()).rev() {
+                    *self.v.get_unchecked_mut(i) = _mm_alignr_epi8(*self.v.get_unchecked(i), *self.v.get_unchecked(i - 1), 15i32);
+                }
+
+                // first one gets to shift in zeros
+                *self.v.get_unchecked_mut(0) = _mm_slli_si128(*self.v.get_unchecked(0), 1i32);
+            }
+
+            operation_param2!("sse4.1", add, _mm_add_epi8);
+            operation_param2!("sse4.1", adds, _mm_adds_epu8);
+            operation_param2!("sse4.1", andnot, _mm_andnot_si128);
+            operation_param2!("sse4.1", cmpeq, _mm_cmpeq_epi8);
+            operation_param2!("sse4.1", min, _mm_min_epu8);
+            operation_param2!("sse4.1", max, _mm_max_epu8);
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn shift_left_1(a: &Self, res: &mut Self) {
+                for i in 0..(a.v.len() - 1) {
+                    *res.v.get_unchecked_mut(i) = _mm_alignr_epi8(*a.v.get_unchecked(i + 1), *a.v.get_unchecked(i), 1i32);
+                }
+
+                // last one gets to shift in zeros
+                let last = a.v.len() - 1;
+                *res.v.get_unchecked_mut(last) = _mm_srli_si128(*a.v.get_unchecked(last), 1i32);
+            }
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn shift_right_1(a: &Self, res: &mut Self) {
+                for i in (1..a.v.len()).rev() {
+                    *res.v.get_unchecked_mut(i) = _mm_alignr_epi8(*a.v.get_unchecked(i), *a.v.get_unchecked(i - 1), 15i32);
+                }
+
+                // first one gets to shift in zeros
+                *res.v.get_unchecked_mut(0) = _mm_slli_si128(*a.v.get_unchecked(0), 1i32);
+            }
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self {
+                // return the edit used in addition to doing a min operation
+                // hide latency by minimizing dependencies
+                let mut v = [_mm_setzero_si128(); $num];
+                let twos = _mm_set1_epi8(2);
+
+                for i in 0..sub.v.len() {
+                    let sub = *sub.v.get_unchecked(i);
+                    let a_gap = *a_gap.v.get_unchecked(i);
+                    let b_gap = *b_gap.v.get_unchecked(i);
+
+                    let res_min1 = _mm_min_epu8(a_gap, b_gap);
+                    // a gap: 2 + -1 = 1, b gap: 2 + 0 = 2
+                    let res_arg1 = _mm_add_epi8(twos, _mm_cmpeq_epi8(a_gap, res_min1));
+
+                    let res_min2 = _mm_min_epu8(sub, res_min1);
+                    // sub: 0
+                    let res_arg2 = _mm_andnot_si128(_mm_cmpeq_epi8(sub, res_min2), res_arg1);
+
+                    *res_min.v.get_unchecked_mut(i) = res_min2;
+                    *v.get_unchecked_mut(i) = res_arg2;
+                }
+
+                Self{
+                    v: v
+                }
+            }
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn triple_min_length(sub: &Self, a_gap: &Self,
+                                        b_gap: &Self, sub_length: &Self, a_gap_length: &Self,
+                                        b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self) {
+                // choose the length based on which edit is chosen during the min operation
+                // hide latency by minimizing dependencies
+                // secondary objective of maximizing length if edit costs equal
+                for i in 0..sub.v.len() {
+                    let sub = *sub.v.get_unchecked(i);
+                    let a_gap = *a_gap.v.get_unchecked(i);
+                    let b_gap = *b_gap.v.get_unchecked(i);
+                    let sub_length = *sub_length.v.get_unchecked(i);
+                    let a_gap_length = *a_gap_length.v.get_unchecked(i);
+                    let b_gap_length = *b_gap_length.v.get_unchecked(i);
+
+                    let res_min1 = _mm_min_epu8(a_gap, b_gap);
+                    let a_b_gt_mask = _mm_cmpeq_epi8(a_gap, res_min1); // a gap: -1, b gap: 0
+                    let mut res_length1 = _mm_blendv_epi8(b_gap_length, a_gap_length, a_b_gt_mask); // lengths based on edits
+                    let a_b_eq_mask = _mm_cmpeq_epi8(a_gap, b_gap); // equal: -1
+                    let a_b_max_len = _mm_max_epu8(a_gap_length, b_gap_length);
+                    res_length1 = _mm_blendv_epi8(res_length1, a_b_max_len, a_b_eq_mask); // maximize length if edits equal
+
+                    let res_min2 = _mm_min_epu8(sub, res_min1);
+                    let sub_gt_mask = _mm_cmpeq_epi8(sub, res_min2); // sub: -1, prev a or b gap: 0
+                    let mut res_length2 = _mm_blendv_epi8(res_length1, sub_length, sub_gt_mask); // length based on edits
+                    let sub_eq_mask = _mm_cmpeq_epi8(sub, res_min1);
+                    let sub_max_len = _mm_max_epu8(sub_length, res_length1);
+                    res_length2 = _mm_blendv_epi8(res_length2, sub_max_len, sub_eq_mask); // maximize length if edits equal
+
+                    *res_min.v.get_unchecked_mut(i) = res_min2;
+                    *res_length.v.get_unchecked_mut(i) = res_length2;
+                }
+            }
         }
-    }
+
+        // this implementation will probably only be used for debugging
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                unsafe {
+                    #![target_feature(enable = "sse4.1")]
+                    write!(f, "[")?;
+
+                    let mut arr = [0u8; 16];
+                    let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
+
+                    for i in 0..(self.v.len() - 1) {
+                        _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(i));
+
+                        for j in 0..16 {
+                            write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                        }
+                    }
+
+                    // leftover elements
+
+                    _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
+
+                    let start = (self.v.len() - 1) << 4;
+
+                    for i in 0..(self.upper_bound() - start) {
+                        if i == self.upper_bound() - start - 1 {
+                            write!(f, "{:>3}", *arr.get_unchecked(i))?;
+                        }else{
+                            write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                        }
+                    }
+
+                    write!(f, "]")
+                }
+            }
+        }
+    };
 }
+
+create_sse_nx16x8!(Sse1x16x8, 1);
+create_sse_nx16x8!(Sse2x16x8, 2);
+create_sse_nx16x8!(Sse4x16x8, 4);
+create_sse_nx16x8!(Sse8x16x8, 8);
+create_sse_nx16x8!(Sse16x16x8, 16);
 
 pub trait Intrinsic {
     unsafe fn loadu(ptr: *const u8, len: usize) -> Self;
