@@ -543,7 +543,7 @@ macro_rules! create_sse_nx16x8 {
             #[inline]
             unsafe fn insert_last_max(&mut self) {
                 let last = self.v.len() - 1;
-                *self.v.get_unchecked_mut(last) = _mm_insert_epi8(*self.v.get_unchecked(last), u8::max_value() as i32, 15i32);
+                *self.v.get_unchecked_mut(last) = _mm_insert_epi8(*self.v.get_unchecked(last), u8::MAX as i32, 15i32);
             }
 
             #[target_feature(enable = "sse4.1")]
@@ -555,7 +555,7 @@ macro_rules! create_sse_nx16x8 {
             #[target_feature(enable = "sse4.1")]
             #[inline]
             unsafe fn insert_first_max(&mut self) {
-                *self.v.get_unchecked_mut(0) = _mm_insert_epi8(*self.v.get_unchecked(0), u8::max_value() as i32, 0i32);
+                *self.v.get_unchecked_mut(0) = _mm_insert_epi8(*self.v.get_unchecked(0), u8::MAX as i32, 0i32);
             }
 
             operation_mut_param2!("sse4.1", add_mut, _mm_add_epi8);
