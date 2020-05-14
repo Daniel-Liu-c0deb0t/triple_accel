@@ -1,4 +1,4 @@
-use std::fmt;
+use std::*;
 
 #[cfg(target_arch = "x86")]
 use core::arch::x86::*;

@@ -1,4 +1,4 @@
-use std;
+use std::*;
 use super::*;
 use super::jewel::*;
 
@@ -119,15 +119,15 @@ pub fn levenshtein_naive_with_opts(a: &[u8], b: &[u8], trace_on: bool, costs: Ed
             }
         }
 
-        std::mem::swap(&mut dp0, &mut dp1);
-        std::mem::swap(&mut dp1, &mut dp2);
+        mem::swap(&mut dp0, &mut dp1);
+        mem::swap(&mut dp1, &mut dp2);
     }
 
     if trace_on {
-        let mut upper_bound_edits = dp1[a_new_len] / std::cmp::min(mismatch_cost, gap_cost);
+        let mut upper_bound_edits = dp1[a_new_len] / cmp::min(mismatch_cost, gap_cost);
 
         if allow_transpose {
-            upper_bound_edits = std::cmp::max(upper_bound_edits, (dp1[a_new_len] >> 1) / transpose_cost + 1);
+            upper_bound_edits = cmp::max(upper_bound_edits, (dp1[a_new_len] >> 1) / transpose_cost + 1);
         }
 
         let mut res: Vec<Edit> = Vec::with_capacity(((upper_bound_edits << 1) + 1) as usize);
@@ -203,11 +203,11 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
 
     let len = a_new_len + 1;
     let mut lo = 0usize;
-    let mut hi = std::cmp::min(unit_k + 1, b_new_len + 1);
+    let mut hi = cmp::min(unit_k + 1, b_new_len + 1);
     let mut prev_lo0;
     let mut prev_lo1 = 0; // unused value
     let mut prev_hi;
-    let k_len = std::cmp::min((unit_k << 1) + 1, b_new_len + 1);
+    let k_len = cmp::min((unit_k << 1) + 1, b_new_len + 1);
     let mut dp0 = vec![0u32; k_len];
     let mut dp1 = vec![0u32; k_len]; // in each iteration, dp1 is already calculated
     let mut dp2 = vec![0u32; k_len]; // dp2 the currently calculated row
@@ -225,7 +225,7 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
         prev_lo0 = prev_lo1;
         prev_lo1 = lo;
         prev_hi = hi;
-        hi = std::cmp::min(hi + 1, b_new_len + 1);
+        hi = cmp::min(hi + 1, b_new_len + 1);
 
         if i > unit_k {
             lo += 1;
@@ -281,8 +281,8 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
             }
         }
 
-        std::mem::swap(&mut dp0, &mut dp1);
-        std::mem::swap(&mut dp1, &mut dp2);
+        mem::swap(&mut dp0, &mut dp1);
+        mem::swap(&mut dp1, &mut dp2);
     }
 
     if dp1[hi - lo - 1] > k {
@@ -293,10 +293,10 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
         return Some((dp1[hi - lo - 1], None));
     }
 
-    let mut upper_bound_edits = dp1[hi - lo - 1] / std::cmp::min(mismatch_cost, gap_cost);
+    let mut upper_bound_edits = dp1[hi - lo - 1] / cmp::min(mismatch_cost, gap_cost);
 
     if allow_transpose {
-        upper_bound_edits = std::cmp::max(upper_bound_edits, (dp1[hi - lo - 1] >> 1) / transpose_cost + 1);
+        upper_bound_edits = cmp::max(upper_bound_edits, (dp1[hi - lo - 1] >> 1) / transpose_cost + 1);
     }
 
     let mut res: Vec<Edit> = Vec::with_capacity(((upper_bound_edits << 1) + 1) as usize);
@@ -355,7 +355,7 @@ pub fn levenshtein_simd_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool, 
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        let unit_k = std::cmp::min(k / (costs.gap_cost as u32), std::cmp::max(a.len(), b.len()) as u32);
+        let unit_k = cmp::min(k / (costs.gap_cost as u32), cmp::max(a.len(), b.len()) as u32);
 
         // note: do not use the MAX value, because it indicates overflow/inaccuracy
         if is_x86_feature_detected!("avx2") {
@@ -402,7 +402,7 @@ macro_rules! create_levenshtein_simd_core {
             let a_len = a.len();
             let b = if swap {a_old} else {b_old};
             let b_len = b.len();
-            let unit_k = std::cmp::min((k / (costs.gap_cost as u32)) as usize, b_len);
+            let unit_k = cmp::min((k / (costs.gap_cost as u32)) as usize, b_len);
 
             if b_len - a_len > unit_k {
                 return None;
@@ -435,16 +435,16 @@ macro_rules! create_levenshtein_simd_core {
             // these characters are placed in the second half of b windows
             // since a windows are reversed, the characters are placed in reverse in the first half of b windows
             let mut a_k1_window = <$jewel>::repeating(0, max_len);
-            a_k1_window.slow_loadu(k1_div2 - 1, a.as_ptr(), std::cmp::min(k1_div2, a_len), true);
+            a_k1_window.slow_loadu(k1_div2 - 1, a.as_ptr(), cmp::min(k1_div2, a_len), true);
 
             let mut b_k1_window = <$jewel>::repeating(0, max_len);
-            b_k1_window.slow_loadu(k1_div2 + 1, b.as_ptr(), std::cmp::min(k1_div2, b_len), false);
+            b_k1_window.slow_loadu(k1_div2 + 1, b.as_ptr(), cmp::min(k1_div2, b_len), false);
 
             let mut a_k2_window = <$jewel>::repeating(0, max_len);
-            a_k2_window.slow_loadu(k2_div2 - 1, a.as_ptr(), std::cmp::min(k2_div2, a_len), true);
+            a_k2_window.slow_loadu(k2_div2 - 1, a.as_ptr(), cmp::min(k2_div2, a_len), true);
 
             let mut b_k2_window = <$jewel>::repeating(0, max_len);
-            b_k2_window.slow_loadu(k2_div2, b.as_ptr(), std::cmp::min(k2_div2, b_len), false);
+            b_k2_window.slow_loadu(k2_div2, b.as_ptr(), cmp::min(k2_div2, b_len), false);
 
             // used to keep track of the next characters to place in the windows
             let mut k1_idx = k1_div2 - 1;
@@ -592,7 +592,7 @@ macro_rules! create_levenshtein_simd_core {
                         // blend using transpose mask
                         dp0.blendv_mut(&transpose, &match_mask0);
                         args.blendv_mut(&threes, &match_mask0);
-                        std::mem::swap(&mut match_mask0, &mut match_mask1);
+                        mem::swap(&mut match_mask0, &mut match_mask1);
                     }
 
                     traceback_arr.push(args);
@@ -603,13 +603,13 @@ macro_rules! create_levenshtein_simd_core {
                     if allow_transpose {
                         // blend using transpose mask
                         dp0.blendv_mut(&transpose, &match_mask0);
-                        std::mem::swap(&mut match_mask0, &mut match_mask1);
+                        mem::swap(&mut match_mask0, &mut match_mask1);
                     }
                 }
 
-                std::mem::swap(&mut dp0, &mut dp_temp);
-                std::mem::swap(&mut dp_temp, &mut dp1);
-                std::mem::swap(&mut dp1, &mut dp2);
+                mem::swap(&mut dp0, &mut dp_temp);
+                mem::swap(&mut dp_temp, &mut dp1);
+                mem::swap(&mut dp1, &mut dp2);
 
                 // (anti) diagonal that matches in the a and b windows
                 <$jewel>::cmpeq(&a_k2_window, &b_k2_window, &mut match_mask1);
@@ -637,7 +637,7 @@ macro_rules! create_levenshtein_simd_core {
                         // blend using transpose mask
                         dp0.blendv_mut(&transpose, &match_mask0);
                         args.blendv_mut(&threes, &match_mask0);
-                        std::mem::swap(&mut match_mask0, &mut match_mask1);
+                        mem::swap(&mut match_mask0, &mut match_mask1);
                     }
 
                     traceback_arr.push(args);
@@ -648,13 +648,13 @@ macro_rules! create_levenshtein_simd_core {
                     if allow_transpose {
                         // blend using transpose mask
                         dp0.blendv_mut(&transpose, &match_mask0);
-                        std::mem::swap(&mut match_mask0, &mut match_mask1);
+                        mem::swap(&mut match_mask0, &mut match_mask1);
                     }
                 }
 
-                std::mem::swap(&mut dp0, &mut dp_temp);
-                std::mem::swap(&mut dp_temp, &mut dp1);
-                std::mem::swap(&mut dp1, &mut dp2);
+                mem::swap(&mut dp0, &mut dp_temp);
+                mem::swap(&mut dp_temp, &mut dp1);
+                mem::swap(&mut dp1, &mut dp2);
             }
 
             let final_res = if ends_with_k2 {
@@ -672,10 +672,10 @@ macro_rules! create_levenshtein_simd_core {
             }
 
             // upper bound the number of edit operations, to reduce memory allocations for saving the traceback
-            let mut upper_bound_edits = final_res / (std::cmp::min(costs.mismatch_cost, costs.gap_cost) as u32);
+            let mut upper_bound_edits = final_res / (cmp::min(costs.mismatch_cost, costs.gap_cost) as u32);
 
             if let Some(cost) = costs.transpose_cost {
-                upper_bound_edits = std::cmp::max(upper_bound_edits, (final_res >> 1) / (cost as u32) + 1);
+                upper_bound_edits = cmp::max(upper_bound_edits, (final_res >> 1) / (cost as u32) + 1);
             }
 
             Some((final_res, Some($traceback_name(&traceback_arr, upper_bound_edits as usize, final_idx, a, b, swap, ends_with_k2))))
@@ -772,7 +772,7 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec<E
 }
 
 pub fn levenshtein_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
-    let max_k = std::cmp::min((needle.len() as u32) * (LEVENSHTEIN_COSTS.mismatch_cost as u32),
+    let max_k = cmp::min((needle.len() as u32) * (LEVENSHTEIN_COSTS.mismatch_cost as u32),
                               (needle.len() as u32) * (LEVENSHTEIN_COSTS.gap_cost as u32) * 2);
     levenshtein_search_naive_with_opts(needle, haystack, max_k, SearchType::Best, LEVENSHTEIN_COSTS, false)
 }
@@ -789,7 +789,7 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
 
     let len = needle_len + 1;
     let iter_len = if anchored {
-        std::cmp::min(haystack_len, needle_len + (k as usize) / (costs.gap_cost as usize))
+        cmp::min(haystack_len, needle_len + (k as usize) / (costs.gap_cost as usize))
     }else{
         haystack_len
     };
@@ -867,10 +867,10 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
             }
         }
 
-        std::mem::swap(&mut dp0, &mut dp1);
-        std::mem::swap(&mut dp1, &mut dp2);
-        std::mem::swap(&mut length0, &mut length1);
-        std::mem::swap(&mut length1, &mut length2);
+        mem::swap(&mut dp0, &mut dp1);
+        mem::swap(&mut dp1, &mut dp2);
+        mem::swap(&mut length0, &mut length1);
+        mem::swap(&mut length1, &mut length2);
     }
 
     if search_type == SearchType::Best {
@@ -881,7 +881,7 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
 }
 
 pub fn levenshtein_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
-    let max_k = std::cmp::min((needle.len() as u32) * (LEVENSHTEIN_COSTS.mismatch_cost as u32),
+    let max_k = cmp::min((needle.len() as u32) * (LEVENSHTEIN_COSTS.mismatch_cost as u32),
                               (needle.len() as u32) * (LEVENSHTEIN_COSTS.gap_cost as u32) * 2);
     levenshtein_search_simd_with_opts(needle, haystack, max_k, SearchType::Best, LEVENSHTEIN_COSTS, false)
 }
@@ -898,7 +898,7 @@ pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32,
         let unit_k = k / (costs.gap_cost as u32);
         // either the length of the match or the number of edits may exceed the maximum
         // available int size; additionally, MAX value is used to indicate overflow
-        let max_k = std::cmp::max(needle.len() as u32 + unit_k, k + 1);
+        let max_k = cmp::max(needle.len() as u32 + unit_k, k + 1);
 
         if is_x86_feature_detected!("avx2") {
             if needle.len() <= Avx1x32x8::static_upper_bound() && max_k <= u8::MAX as u32 {
@@ -956,7 +956,7 @@ macro_rules! create_levenshtein_search_simd_core {
 
             // the suffix of haystack can be ignored if needle must be anchored
             let len = if anchored {
-                needle_len + std::cmp::min(haystack_len, needle_len + (k as usize) / (costs.gap_cost as usize))
+                needle_len + cmp::min(haystack_len, needle_len + (k as usize) / (costs.gap_cost as usize))
             }else{
                 needle_len + haystack_len
             };
@@ -1025,7 +1025,7 @@ macro_rules! create_levenshtein_search_simd_core {
                 if anchored {
                     // dp1 is 2 diagonals behind the current i
                     // must be capped at k to prevent overflow when inserting
-                    sub.insert_last_0(std::cmp::min((i as u32 - 1) * (costs.gap_cost as u32), k + 1));
+                    sub.insert_last_0(cmp::min((i as u32 - 1) * (costs.gap_cost as u32), k + 1));
                 }
 
                 sub.adds_mut(&match_mask_cost);
@@ -1042,7 +1042,7 @@ macro_rules! create_levenshtein_search_simd_core {
 
                 if anchored {
                     // dp2 is one diagonal behind the current i
-                    haystack_gap.insert_last_0(std::cmp::min((i as u32) * (costs.gap_cost as u32), k + 1));
+                    haystack_gap.insert_last_0(cmp::min((i as u32) * (costs.gap_cost as u32), k + 1));
                 }
 
                 haystack_gap.adds_mut(&gap_cost);
@@ -1056,7 +1056,7 @@ macro_rules! create_levenshtein_search_simd_core {
                     dp0.shift_left_2_mut();
 
                     if anchored && i > 3 {
-                        dp0.insert_last_1(std::cmp::min((i as u32 - 2) * (costs.gap_cost as u32), k + 1));
+                        dp0.insert_last_1(cmp::min((i as u32 - 2) * (costs.gap_cost as u32), k + 1));
                     }
 
                     length0.shift_left_2_mut();
@@ -1071,15 +1071,15 @@ macro_rules! create_levenshtein_search_simd_core {
                     // blend using transpose mask
                     dp0.blendv_mut(&transpose, &match_mask0);
                     length0.blendv_mut(&transpose_length, &match_mask0);
-                    std::mem::swap(&mut match_mask0, &mut match_mask1);
+                    mem::swap(&mut match_mask0, &mut match_mask1);
                 }
 
-                std::mem::swap(&mut dp0, &mut dp_temp);
-                std::mem::swap(&mut dp_temp, &mut dp1);
-                std::mem::swap(&mut dp1, &mut dp2);
-                std::mem::swap(&mut length0, &mut length_temp);
-                std::mem::swap(&mut length_temp, &mut length1);
-                std::mem::swap(&mut length1, &mut length2);
+                mem::swap(&mut dp0, &mut dp_temp);
+                mem::swap(&mut dp_temp, &mut dp1);
+                mem::swap(&mut dp1, &mut dp2);
+                mem::swap(&mut length0, &mut length_temp);
+                mem::swap(&mut length_temp, &mut length1);
+                mem::swap(&mut length1, &mut length2);
 
                 if i >= needle_len - 1 {
                     let final_res = dp2.slow_extract(final_idx);

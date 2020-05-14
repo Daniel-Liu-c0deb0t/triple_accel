@@ -21,7 +21,7 @@
 //! * `needle` and `haystack` - any two strings; we want to search for where needle appears in
 //! haystack
 
-use std;
+use std::*;
 
 pub mod jewel;
 pub mod hamming;
@@ -99,7 +99,7 @@ pub enum SearchType {
 pub fn alloc_str(len: usize) -> Vec<u8> {
     let words_len = (len >> 4) + (if (len & 15) > 0 {1} else {0});
     let words = vec![0u128; words_len];
-    let mut words = std::mem::ManuallyDrop::new(words);
+    let mut words = mem::ManuallyDrop::new(words);
 
     unsafe {
         Vec::from_raw_parts(words.as_mut_ptr() as *mut u8, len, words_len << 4)
@@ -133,7 +133,7 @@ pub fn fill_str(dest: &mut [u8], src: &[u8]) {
     assert!(dest.len() >= src.len());
 
     unsafe {
-        std::ptr::copy_nonoverlapping(src.as_ptr(), dest.as_mut_ptr(), src.len());
+        ptr::copy_nonoverlapping(src.as_ptr(), dest.as_mut_ptr(), src.len());
     }
 }
 
