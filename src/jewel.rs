@@ -2065,7 +2065,7 @@ impl fmt::Display for SseNx4x32 {
     }
 }
 
-pub trait Intrinsic {
+pub trait HammingJewel {
     unsafe fn loadu(ptr: *const u8, len: usize) -> Self;
     fn upper_bound(&self) -> usize;
     unsafe fn mm_count_mismatches(a_ptr: *const u8, b_ptr: *const u8, len: usize) -> u32;
@@ -2079,7 +2079,7 @@ pub struct Avx {
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-impl Intrinsic for Avx {
+impl HammingJewel for Avx {
     #[target_feature(enable = "avx2")]
     #[inline]
     unsafe fn loadu(ptr: *const u8, len: usize) -> Self {
@@ -2223,6 +2223,159 @@ impl Intrinsic for Avx {
         _mm256_storeu_si256(sad_arr.as_mut_ptr() as *mut __m256i, sad);
         let res = *sad_arr.get_unchecked(0) + *sad_arr.get_unchecked(2)
             + *sad_arr.get_unchecked(4) + *sad_arr.get_unchecked(6);
+
+        len as u32 - res
+    }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub struct Sse {
+    v: Vec<__m128i>
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+impl HammingJewel for Sse {
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn loadu(ptr: *const u8, len: usize) -> Self {
+        let word_len = len >> 4;
+        let word_rem = len & 15;
+        let mut v = Vec::with_capacity(word_len + if word_rem > 0 {1} else {0});
+        let sse_ptr = ptr as *const __m128i;
+
+        for i in 0..word_len {
+            v.push(_mm_loadu_si128(sse_ptr.offset(i as isize)));
+        }
+
+        if word_rem > 0 {
+            let mut arr = [0u8; 16];
+            let end_ptr = ptr.offset((word_len << 4) as isize);
+
+            for i in 0..word_rem {
+                *arr.get_unchecked_mut(i) = *end_ptr.offset(i as isize);
+            }
+
+            v.push(_mm_loadu_si128(arr.as_ptr() as *const __m128i));
+        }
+
+        Self{
+            v: v
+        }
+    }
+
+    #[inline]
+    fn upper_bound(&self) -> usize {
+        self.v.len() << 4
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn mm_count_mismatches(a_ptr: *const u8, b_ptr: *const u8, len: usize) -> u32 {
+        let mut res = 0u32;
+        let div_len = (len >> 4) as isize;
+        let sse_a_ptr = a_ptr as *const __m128i;
+        let sse_b_ptr = b_ptr as *const __m128i;
+
+        for i in 0..div_len {
+            let a = _mm_loadu_si128(sse_a_ptr.offset(i));
+            let b = _mm_loadu_si128(sse_b_ptr.offset(i));
+            let eq = _mm_cmpeq_epi8(a, b);
+            res += _mm_movemask_epi8(eq).count_ones();
+        }
+
+        for i in (div_len << 4)..len as isize {
+            res += (*a_ptr.offset(i) == *b_ptr.offset(i)) as u32;
+        }
+
+        len as u32 - res
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn count_mismatches(a_ptr: *const u8, b_ptr: *const u8, len: usize) -> u32 {
+        let refresh_len = (len / (255 * 16)) as isize;
+        let zeros = _mm_setzero_si128();
+        let mut sad = zeros;
+        let sse_a_ptr = a_ptr as *const __m128i;
+        let sse_b_ptr = b_ptr as *const __m128i;
+
+        for i in 0..refresh_len {
+            let mut curr = zeros;
+
+            for j in (i * 255)..((i + 1) * 255) {
+                let a = _mm_loadu_si128(sse_a_ptr.offset(j));
+                let b = _mm_loadu_si128(sse_b_ptr.offset(j));
+                let eq = _mm_cmpeq_epi8(a, b);
+                curr = _mm_sub_epi8(curr, eq); // subtract -1 = add 1 when matching
+                // counting matches instead of mismatches for speed
+            }
+
+            // subtract 0 and sum up 8 bytes at once horizontally into two 64 bit ints
+            // accumulate those 64 bit ints
+            sad = _mm_add_epi64(sad, _mm_sad_epu8(curr, zeros));
+        }
+
+        let word_len = (len >> 4) as isize;
+        let mut curr = zeros;
+
+        // leftover blocks of 16 bytes
+        for i in (refresh_len * 255)..word_len {
+            let a = _mm_loadu_si128(sse_a_ptr.offset(i));
+            let b = _mm_loadu_si128(sse_b_ptr.offset(i));
+            let eq = _mm_cmpeq_epi8(a, b);
+            curr = _mm_sub_epi8(curr, eq); // subtract -1 = add 1 when matching
+        }
+
+        sad = _mm_add_epi64(sad, _mm_sad_epu8(curr, zeros));
+        let mut sad_arr = [0u32; 4];
+        _mm_storeu_si128(sad_arr.as_mut_ptr() as *mut __m128i, sad);
+        let mut res = *sad_arr.get_unchecked(0) + *sad_arr.get_unchecked(2);
+
+        for i in (word_len << 4)..len as isize {
+            res += (*a_ptr.offset(i) == *b_ptr.offset(i)) as u32;
+        }
+
+        len as u32 - res
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn vector_count_mismatches(a: &Self, b_ptr: *const u8, len: usize) -> u32 {
+        let refresh_len = (a.v.len() / 255) as isize;
+        let zeros = _mm_setzero_si128();
+        let mut sad = zeros;
+        let sse_b_ptr = b_ptr as *const __m128i;
+
+        for i in 0..refresh_len {
+            let mut curr = zeros;
+
+            for j in (i * 255)..((i + 1) * 255) {
+                let a = *a.v.get_unchecked(j as usize);
+                let b = _mm_loadu_si128(sse_b_ptr.offset(j));
+                let eq = _mm_cmpeq_epi8(a, b);
+                curr = _mm_sub_epi8(curr, eq); // subtract -1 = add 1 when matching
+                // counting matches instead of mismatches for speed
+            }
+
+            // subtract 0 and sum up 8 bytes at once horizontally into two 64 bit ints
+            // accumulate those 64 bit ints
+            sad = _mm_add_epi64(sad, _mm_sad_epu8(curr, zeros));
+        }
+
+        let mut curr = zeros;
+
+        // leftover blocks of 16 bytes
+        for i in (refresh_len * 255)..a.v.len() as isize {
+            let a = *a.v.get_unchecked(i as usize);
+            let b = _mm_loadu_si128(sse_b_ptr.offset(i));
+            let eq = _mm_cmpeq_epi8(a, b);
+            curr = _mm_sub_epi8(curr, eq); // subtract -1 = add 1 when matching
+        }
+
+        sad = _mm_add_epi64(sad, _mm_sad_epu8(curr, zeros));
+        let mut sad_arr = [0u32; 4];
+        _mm_storeu_si128(sad_arr.as_mut_ptr() as *mut __m128i, sad);
+        let res = *sad_arr.get_unchecked(0) + *sad_arr.get_unchecked(2);
 
         len as u32 - res
     }

@@ -289,6 +289,8 @@ pub fn hamming_simd_parallel(a: &[u8], b: &[u8]) -> u32 {
     {
         if is_x86_feature_detected!("avx2") {
             return unsafe {Avx::count_mismatches(a.as_ptr(), b.as_ptr(), a.len())};
+        }else if is_x86_feature_detected!("sse4.1") {
+            return unsafe {Sse::count_mismatches(a.as_ptr(), b.as_ptr(), a.len())};
         }
     }
 
@@ -323,6 +325,8 @@ pub fn hamming_simd_movemask(a: &[u8], b: &[u8]) -> u32 {
     {
         if is_x86_feature_detected!("avx2") {
             return unsafe {Avx::mm_count_mismatches(a.as_ptr(), b.as_ptr(), a.len())};
+        }else if is_x86_feature_detected!("sse4.1") {
+            return unsafe {Sse::mm_count_mismatches(a.as_ptr(), b.as_ptr(), a.len())};
         }
     }
 
@@ -393,63 +397,72 @@ pub fn hamming_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32, sea
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         if is_x86_feature_detected!("avx2") {
-            return unsafe {hamming_search_simd_core::<Avx>(needle, haystack, k, search_type)};
+            return unsafe {hamming_search_simd_core_avx(needle, haystack, k, search_type)};
+        }else if is_x86_feature_detected!("sse4.1") {
+            return unsafe {hamming_search_simd_core_sse(needle, haystack, k, search_type)};
         }
     }
 
     hamming_search_naive_with_opts(needle, haystack, k, search_type)
 }
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2,sse4.1")]
-unsafe fn hamming_search_simd_core<T: Intrinsic>(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType) -> Vec<Match> {
-    let needle_len = needle.len();
-    let haystack_len = haystack.len();
-    let needle_vector = T::loadu(needle.as_ptr(), needle_len);
-    let len = if needle_vector.upper_bound() > haystack_len {0} else {haystack_len + 1 - needle_vector.upper_bound()};
-    let real_len = haystack_len + 1 - needle_len;
-    let mut res = Vec::with_capacity(len >> 2);
-    let haystack_ptr = haystack.as_ptr();
-    let mut curr_k = k;
+macro_rules! create_hamming_search_simd_core {
+    ($name:ident, $jewel:ty, $target:literal) => {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[target_feature(enable = $target)]
+        unsafe fn $name(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType) -> Vec<Match> {
+            let needle_len = needle.len();
+            let haystack_len = haystack.len();
+            let needle_vector = <$jewel>::loadu(needle.as_ptr(), needle_len);
+            let len = if needle_vector.upper_bound() > haystack_len {0} else {haystack_len + 1 - needle_vector.upper_bound()};
+            let real_len = haystack_len + 1 - needle_len;
+            let mut res = Vec::with_capacity(len >> 2);
+            let haystack_ptr = haystack.as_ptr();
+            let mut curr_k = k;
 
-    for i in 0..len {
-        let final_res = T::vector_count_mismatches(&needle_vector, haystack_ptr.offset(i as isize), needle_len);
+            for i in 0..len {
+                let final_res = <$jewel>::vector_count_mismatches(&needle_vector, haystack_ptr.offset(i as isize), needle_len);
 
-        if final_res <= curr_k {
-            res.push(Match{start: i, end: i + needle_len, k: final_res});
+                if final_res <= curr_k {
+                    res.push(Match{start: i, end: i + needle_len, k: final_res});
 
-            match search_type {
-                SearchType::First => break,
-                SearchType::Best => curr_k = final_res,
-                _ => ()
+                    match search_type {
+                        SearchType::First => break,
+                        SearchType::Best => curr_k = final_res,
+                        _ => ()
+                    }
+                }
             }
-        }
-    }
 
-    'outer: for i in len..real_len {
-        let mut final_res = 0u32;
+            'outer: for i in len..real_len {
+                let mut final_res = 0u32;
 
-        for j in 0..needle_len {
-            final_res += (*needle.get_unchecked(j) != *haystack.get_unchecked(i + j)) as u32;
+                for j in 0..needle_len {
+                    final_res += (*needle.get_unchecked(j) != *haystack.get_unchecked(i + j)) as u32;
 
-            if final_res > curr_k {
-                continue 'outer;
+                    if final_res > curr_k {
+                        continue 'outer;
+                    }
+                }
+
+                res.push(Match{start: i, end: i + needle_len, k: final_res});
+
+                match search_type {
+                    SearchType::First => break,
+                    SearchType::Best => curr_k = final_res,
+                    _ => ()
+                }
             }
+
+            if search_type == SearchType::Best {
+                res.retain(|m| m.k == curr_k);
+            }
+
+            res
         }
-
-        res.push(Match{start: i, end: i + needle_len, k: final_res});
-
-        match search_type {
-            SearchType::First => break,
-            SearchType::Best => curr_k = final_res,
-            _ => ()
-        }
-    }
-
-    if search_type == SearchType::Best {
-        res.retain(|m| m.k == curr_k);
-    }
-
-    res
+    };
 }
+
+create_hamming_search_simd_core!(hamming_search_simd_core_avx, Avx, "avx2");
+create_hamming_search_simd_core!(hamming_search_simd_core_sse, Sse, "sse4.1");
 
