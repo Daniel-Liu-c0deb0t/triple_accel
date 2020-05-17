@@ -2,10 +2,10 @@ use criterion::{criterion_group, criterion_main, Criterion, black_box};
 use triple_accel::jewel::*;
 
 #[cfg(target_arch = "x86")]
-use core::arch::x86::*;
+use std::arch::x86::*;
 
 #[cfg(target_arch = "x86_64")]
-use core::arch::x86_64::*;
+use std::arch::x86_64::*;
 
 fn bench_jewel_fn(c: &mut Criterion) {
     let mut group = c.benchmark_group("bench_jewel_fn");

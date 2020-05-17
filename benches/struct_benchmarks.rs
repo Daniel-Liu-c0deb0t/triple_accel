@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion, black_box};
-use core::arch::x86_64::*;
+use std::arch::x86_64::*;
 
 mod other {
     use core::arch::x86_64::*;

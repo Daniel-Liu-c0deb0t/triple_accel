@@ -1,10 +1,10 @@
 use std::*;
 
 #[cfg(target_arch = "x86")]
-use core::arch::x86::*;
+use std::arch::x86::*;
 
 #[cfg(target_arch = "x86_64")]
-use core::arch::x86_64::*;
+use std::arch::x86_64::*;
 
 /// Jewel provides a uniform interface for SIMD operations.
 ///
@@ -324,7 +324,7 @@ macro_rules! create_avx_nx32x8 {
             unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self {
                 // return the edit used in addition to doing a min operation
                 // hide latency by minimizing dependencies
-                let mut v = [_mm256_setzero_si256(); $num];
+                let mut v = [_mm256_undefined_si256(); $num];
                 let twos = _mm256_set1_epi8(2);
 
                 for i in 0..sub.v.len() {
@@ -429,6 +429,688 @@ create_avx_nx32x8!(Avx1x32x8, 1);
 create_avx_nx32x8!(Avx2x32x8, 2);
 create_avx_nx32x8!(Avx4x32x8, 4);
 create_avx_nx32x8!(Avx8x32x8, 8);
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub struct AvxNx16x16 {
+    v: Vec<__m256i>
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+impl Jewel for AvxNx16x16 {
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn repeating(val: u32, len: usize) -> Self {
+        let v = vec![_mm256_set1_epi16(val as i16); (len >> 4) + if (len & 15) > 0 {1} else {0}];
+
+        Self{
+            v: v
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn repeating_max(len: usize) -> Self {
+        let v = vec![_mm256_set1_epi16(-1i16); (len >> 4) + if (len & 15) > 0 {1} else {0}];
+
+        Self{
+            v: v
+        }
+    }
+
+    #[inline]
+    fn upper_bound(&self) -> usize {
+        self.v.len() << 4
+    }
+
+    #[inline]
+    fn static_upper_bound() -> usize {
+        unimplemented!()
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn slow_loadu(&mut self, idx: usize, ptr: *const u8, len: usize, reverse: bool) {
+        if len == 0 {
+            return;
+        }
+
+        let mut arr = [0u16; 16];
+        let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
+
+        for i in 0..len {
+            let curr_idx = if reverse {idx - i} else {idx + i};
+            let arr_idx = curr_idx & 15;
+
+            if arr_idx == 0 || i == 0 {
+                _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(curr_idx >> 4));
+            }
+
+            *arr.get_unchecked_mut(arr_idx) = *ptr.offset(i as isize) as u16;
+
+            if arr_idx == 15 || i == len - 1 {
+                *self.v.get_unchecked_mut(curr_idx >> 4) = _mm256_loadu_si256(arr_ptr);
+            }
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn slow_extract(&self, i: usize) -> u32 {
+        let idx = i >> 4;
+        let j = i & 15;
+        let mut arr = [0u16; 16];
+        _mm256_storeu_si256(arr.as_mut_ptr() as *mut __m256i, *self.v.get_unchecked(idx));
+        *arr.get_unchecked(j) as u32
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn slow_insert(&mut self, i: usize, val: u32) {
+        let idx = i >> 4;
+        let j = i & 15;
+        let mut arr = [0u16; 16];
+        let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
+        _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(idx));
+        *arr.get_unchecked_mut(j) = val as u16;
+        *self.v.get_unchecked_mut(idx) = _mm256_loadu_si256(arr_ptr);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn insert_last_0(&mut self, val: u32) {
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm256_insert_epi16(*self.v.get_unchecked(last), val as i16, 15i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn insert_last_1(&mut self, val: u32) {
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm256_insert_epi16(*self.v.get_unchecked(last), val as i16, 14i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn insert_last_2(&mut self, val: u32) {
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm256_insert_epi16(*self.v.get_unchecked(last), val as i16, 13i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn insert_last_max(&mut self) {
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm256_insert_epi16(*self.v.get_unchecked(last), -1i16, 15i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn insert_first(&mut self, val: u32) {
+        *self.v.get_unchecked_mut(0) = _mm256_insert_epi16(*self.v.get_unchecked(0), val as i16, 0i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn insert_first_max(&mut self) {
+        *self.v.get_unchecked_mut(0) = _mm256_insert_epi16(*self.v.get_unchecked(0), -1i16, 0i32);
+    }
+
+    operation_mut_param2!("avx2", add_mut, _mm256_add_epi16);
+    operation_mut_param2!("avx2", adds_mut, _mm256_adds_epu16);
+    operation_mut_param2!("avx2", and_mut, _mm256_and_si256);
+    operation_mut_param2!("avx2", andnot_mut, _mm256_andnot_si256);
+    operation_mut_param2!("avx2", cmpeq_mut, _mm256_cmpeq_epi16);
+    operation_mut_param2!("avx2", min_mut, _mm256_min_epu16);
+    operation_mut_param2!("avx2", max_mut, _mm256_max_epu16);
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn blendv_mut(&mut self, b: &Self, mask: &Self) {
+        for i in 0..self.v.len() {
+            *self.v.get_unchecked_mut(i) = _mm256_blendv_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i), *mask.v.get_unchecked(i));
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn shift_left_1_mut(&mut self) {
+        for i in 0..(self.v.len() - 1) {
+            let curr = *self.v.get_unchecked(i);
+            // permute concatenates the second half of the current vector and the first half of the next vector
+            *self.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
+                _mm256_permute2x128_si256(curr, *self.v.get_unchecked(i + 1), 0b00100001i32), curr, 2i32);
+        }
+
+        // last one gets to shift in zeros
+        let last = self.v.len() - 1;
+        let curr = *self.v.get_unchecked(last);
+        // permute concatenates the second half of the last vector and a vector of zeros
+        *self.v.get_unchecked_mut(last) = _mm256_alignr_epi8(_mm256_permute2x128_si256(curr, curr, 0b10000001i32), curr, 2i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn shift_left_2_mut(&mut self) {
+        for i in 0..(self.v.len() - 1) {
+            let curr = *self.v.get_unchecked(i);
+            // permute concatenates the second half of the current vector and the first half of the next vector
+            *self.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
+                _mm256_permute2x128_si256(curr, *self.v.get_unchecked(i + 1), 0b00100001i32), curr, 4i32);
+        }
+
+        // last one gets to shift in zeros
+        let last = self.v.len() - 1;
+        let curr = *self.v.get_unchecked(last);
+        // permute concatenates the second half of the last vector and a vector of zeros
+        *self.v.get_unchecked_mut(last) = _mm256_alignr_epi8(_mm256_permute2x128_si256(curr, curr, 0b10000001i32), curr, 4i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn shift_right_1_mut(&mut self) {
+        for i in (1..self.v.len()).rev() {
+            let curr = *self.v.get_unchecked(i);
+            // permute concatenates the second half of the previous vector and the first half of the current vector
+            *self.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
+                curr, _mm256_permute2x128_si256(curr, *self.v.get_unchecked(i - 1), 0b00000011i32), 14i32);
+        }
+
+        // first one gets to shift in zeros
+        let curr = *self.v.get_unchecked(0);
+        // permute concatenates a vector of zeros and the first half of the first vector
+        *self.v.get_unchecked_mut(0) = _mm256_alignr_epi8(curr, _mm256_permute2x128_si256(curr, curr, 0b00001000i32), 14i32);
+    }
+
+    operation_param2!("avx2", add, _mm256_add_epi16);
+    operation_param2!("avx2", adds, _mm256_adds_epu16);
+    operation_param2!("avx2", andnot, _mm256_andnot_si256);
+    operation_param2!("avx2", cmpeq, _mm256_cmpeq_epi16);
+    operation_param2!("avx2", min, _mm256_min_epu16);
+    operation_param2!("avx2", max, _mm256_max_epu16);
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn shift_left_1(a: &Self, res: &mut Self) {
+        for i in 0..(a.v.len() - 1) {
+            let curr = *a.v.get_unchecked(i);
+            // permute concatenates the second half of the current vector and the first half of the next vector
+            *res.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
+                _mm256_permute2x128_si256(curr, *a.v.get_unchecked(i + 1), 0b00100001i32), curr, 2i32);
+        }
+
+        // last one gets to shift in zeros
+        let last = a.v.len() - 1;
+        let curr = *a.v.get_unchecked(last);
+        // permute concatenates the second half of the last vector and a vector of zeros
+        *res.v.get_unchecked_mut(last) = _mm256_alignr_epi8(_mm256_permute2x128_si256(curr, curr, 0b10000001i32), curr, 2i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn shift_right_1(a: &Self, res: &mut Self) {
+        for i in (1..a.v.len()).rev() {
+            let curr = *a.v.get_unchecked(i);
+            // permute concatenates the second half of the previous vector and the first half of the current vector
+            *res.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
+                curr, _mm256_permute2x128_si256(curr, *a.v.get_unchecked(i - 1), 0b00000011i32), 14i32);
+        }
+
+        // first one gets to shift in zeros
+        let curr = *a.v.get_unchecked(0);
+        // permute concatenates a vector of zeros and the first half of the first vector
+        *res.v.get_unchecked_mut(0) = _mm256_alignr_epi8(curr, _mm256_permute2x128_si256(curr, curr, 0b00001000i32), 14i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self {
+        // return the edit used in addition to doing a min operation
+        // hide latency by minimizing dependencies
+        let mut v = Vec::with_capacity(sub.v.len());
+        let twos = _mm256_set1_epi16(2);
+
+        for i in 0..sub.v.len() {
+            let sub = *sub.v.get_unchecked(i);
+            let a_gap = *a_gap.v.get_unchecked(i);
+            let b_gap = *b_gap.v.get_unchecked(i);
+
+            let res_min1 = _mm256_min_epu16(a_gap, b_gap);
+            // a gap: 2 + -1 = 1, b gap: 2 + 0 = 2
+            let res_arg1 = _mm256_add_epi16(twos, _mm256_cmpeq_epi16(a_gap, res_min1));
+
+            let res_min2 = _mm256_min_epu16(sub, res_min1);
+            // sub: 0
+            let res_arg2 = _mm256_andnot_si256(_mm256_cmpeq_epi16(sub, res_min2), res_arg1);
+
+            *res_min.v.get_unchecked_mut(i) = res_min2;
+            v.push(res_arg2);
+        }
+
+        Self{
+            v: v
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn triple_min_length(sub: &Self, a_gap: &Self,
+                                b_gap: &Self, sub_length: &Self, a_gap_length: &Self,
+                                b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self) {
+        // choose the length based on which edit is chosen during the min operation
+        // hide latency by minimizing dependencies
+        // secondary objective of maximizing length if edit costs equal
+        for i in 0..sub.v.len() {
+            let sub = *sub.v.get_unchecked(i);
+            let a_gap = *a_gap.v.get_unchecked(i);
+            let b_gap = *b_gap.v.get_unchecked(i);
+            let sub_length = *sub_length.v.get_unchecked(i);
+            let a_gap_length = *a_gap_length.v.get_unchecked(i);
+            let b_gap_length = *b_gap_length.v.get_unchecked(i);
+
+            let res_min1 = _mm256_min_epu16(a_gap, b_gap);
+            let a_b_gt_mask = _mm256_cmpeq_epi16(a_gap, res_min1); // a gap: -1, b gap: 0
+            let mut res_length1 = _mm256_blendv_epi8(b_gap_length, a_gap_length, a_b_gt_mask); // lengths based on edits
+            let a_b_eq_mask = _mm256_cmpeq_epi16(a_gap, b_gap); // equal: -1
+            let a_b_max_len = _mm256_max_epu16(a_gap_length, b_gap_length);
+            res_length1 = _mm256_blendv_epi8(res_length1, a_b_max_len, a_b_eq_mask); // maximize length if edits equal
+
+            let res_min2 = _mm256_min_epu16(sub, res_min1);
+            let sub_gt_mask = _mm256_cmpeq_epi16(sub, res_min2); // sub: -1, prev a or b gap: 0
+            let mut res_length2 = _mm256_blendv_epi8(res_length1, sub_length, sub_gt_mask); // length based on edits
+            let sub_eq_mask = _mm256_cmpeq_epi16(sub, res_min1);
+            let sub_max_len = _mm256_max_epu16(sub_length, res_length1);
+            res_length2 = _mm256_blendv_epi8(res_length2, sub_max_len, sub_eq_mask); // maximize length if edits equal
+
+            *res_min.v.get_unchecked_mut(i) = res_min2;
+            *res_length.v.get_unchecked_mut(i) = res_length2;
+        }
+    }
+}
+
+// this implementation will probably only be used for debugging
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+impl fmt::Display for AvxNx16x16 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        unsafe {
+            #![target_feature(enable = "avx2")]
+            write!(f, "[")?;
+
+            let mut arr = [0u16; 16];
+            let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
+
+            for i in 0..(self.v.len() - 1) {
+                _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(i));
+
+                for j in 0..16 {
+                    write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                }
+            }
+
+            // leftover elements
+
+            _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
+
+            let start = (self.v.len() - 1) << 4;
+
+            for i in 0..(self.upper_bound() - start) {
+                if i == self.upper_bound() - start - 1 {
+                    write!(f, "{:>3}", *arr.get_unchecked(i))?;
+                }else{
+                    write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                }
+            }
+
+            write!(f, "]")
+        }
+    }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub struct AvxNx8x32 {
+    v: Vec<__m256i>
+}
+
+/// Workaround for the lack of the _mm256_adds_epu32 intrinsic.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn _mm256_adds_epu32(a: __m256i, b: __m256i) -> __m256i {
+    let sum = _mm256_add_epi32(a, b);
+    let min = _mm256_min_epu32(a, sum);
+    let eq = _mm256_cmpeq_epi32(a, min);
+    // if the sum is less than a, then saturate
+    _mm256_blendv_epi8(_mm256_set1_epi32(-1i32), sum, eq)
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+impl Jewel for AvxNx8x32 {
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn repeating(val: u32, len: usize) -> Self {
+        let v = vec![_mm256_set1_epi32(val as i32); (len >> 3) + if (len & 7) > 0 {1} else {0}];
+
+        Self{
+            v: v
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn repeating_max(len: usize) -> Self {
+        let v = vec![_mm256_set1_epi32(-1i32); (len >> 3) + if (len & 7) > 0 {1} else {0}];
+
+        Self{
+            v: v
+        }
+    }
+
+    #[inline]
+    fn upper_bound(&self) -> usize {
+        self.v.len() << 3
+    }
+
+    #[inline]
+    fn static_upper_bound() -> usize {
+        unimplemented!()
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn slow_loadu(&mut self, idx: usize, ptr: *const u8, len: usize, reverse: bool) {
+        if len == 0 {
+            return;
+        }
+
+        let mut arr = [0u32; 8];
+        let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
+
+        for i in 0..len {
+            let curr_idx = if reverse {idx - i} else {idx + i};
+            let arr_idx = curr_idx & 7;
+
+            if arr_idx == 0 || i == 0 {
+                _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(curr_idx >> 3));
+            }
+
+            *arr.get_unchecked_mut(arr_idx) = *ptr.offset(i as isize) as u32;
+
+            if arr_idx == 7 || i == len - 1 {
+                *self.v.get_unchecked_mut(curr_idx >> 3) = _mm256_loadu_si256(arr_ptr);
+            }
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn slow_extract(&self, i: usize) -> u32 {
+        let idx = i >> 3;
+        let j = i & 7;
+        let mut arr = [0u32; 8];
+        _mm256_storeu_si256(arr.as_mut_ptr() as *mut __m256i, *self.v.get_unchecked(idx));
+        *arr.get_unchecked(j)
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn slow_insert(&mut self, i: usize, val: u32) {
+        let idx = i >> 3;
+        let j = i & 7;
+        let mut arr = [0u32; 8];
+        let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
+        _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(idx));
+        *arr.get_unchecked_mut(j) = val;
+        *self.v.get_unchecked_mut(idx) = _mm256_loadu_si256(arr_ptr);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn insert_last_0(&mut self, val: u32) {
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm256_insert_epi32(*self.v.get_unchecked(last), val as i32, 7i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn insert_last_1(&mut self, val: u32) {
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm256_insert_epi32(*self.v.get_unchecked(last), val as i32, 6i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn insert_last_2(&mut self, val: u32) {
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm256_insert_epi32(*self.v.get_unchecked(last), val as i32, 5i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn insert_last_max(&mut self) {
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm256_insert_epi32(*self.v.get_unchecked(last), -1i32, 7i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn insert_first(&mut self, val: u32) {
+        *self.v.get_unchecked_mut(0) = _mm256_insert_epi32(*self.v.get_unchecked(0), val as i32, 0i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn insert_first_max(&mut self) {
+        *self.v.get_unchecked_mut(0) = _mm256_insert_epi32(*self.v.get_unchecked(0), -1i32, 0i32);
+    }
+
+    operation_mut_param2!("avx2", add_mut, _mm256_add_epi32);
+    operation_mut_param2!("avx2", adds_mut, _mm256_adds_epu32);
+    operation_mut_param2!("avx2", and_mut, _mm256_and_si256);
+    operation_mut_param2!("avx2", andnot_mut, _mm256_andnot_si256);
+    operation_mut_param2!("avx2", cmpeq_mut, _mm256_cmpeq_epi32);
+    operation_mut_param2!("avx2", min_mut, _mm256_min_epu32);
+    operation_mut_param2!("avx2", max_mut, _mm256_max_epu32);
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn blendv_mut(&mut self, b: &Self, mask: &Self) {
+        for i in 0..self.v.len() {
+            *self.v.get_unchecked_mut(i) = _mm256_blendv_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i), *mask.v.get_unchecked(i));
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn shift_left_1_mut(&mut self) {
+        for i in 0..(self.v.len() - 1) {
+            let curr = *self.v.get_unchecked(i);
+            // permute concatenates the second half of the current vector and the first half of the next vector
+            *self.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
+                _mm256_permute2x128_si256(curr, *self.v.get_unchecked(i + 1), 0b00100001i32), curr, 4i32);
+        }
+
+        // last one gets to shift in zeros
+        let last = self.v.len() - 1;
+        let curr = *self.v.get_unchecked(last);
+        // permute concatenates the second half of the last vector and a vector of zeros
+        *self.v.get_unchecked_mut(last) = _mm256_alignr_epi8(_mm256_permute2x128_si256(curr, curr, 0b10000001i32), curr, 4i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn shift_left_2_mut(&mut self) {
+        for i in 0..(self.v.len() - 1) {
+            let curr = *self.v.get_unchecked(i);
+            // permute concatenates the second half of the current vector and the first half of the next vector
+            *self.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
+                _mm256_permute2x128_si256(curr, *self.v.get_unchecked(i + 1), 0b00100001i32), curr, 8i32);
+        }
+
+        // last one gets to shift in zeros
+        let last = self.v.len() - 1;
+        let curr = *self.v.get_unchecked(last);
+        // permute concatenates the second half of the last vector and a vector of zeros
+        *self.v.get_unchecked_mut(last) = _mm256_alignr_epi8(_mm256_permute2x128_si256(curr, curr, 0b10000001i32), curr, 8i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn shift_right_1_mut(&mut self) {
+        for i in (1..self.v.len()).rev() {
+            let curr = *self.v.get_unchecked(i);
+            // permute concatenates the second half of the previous vector and the first half of the current vector
+            *self.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
+                curr, _mm256_permute2x128_si256(curr, *self.v.get_unchecked(i - 1), 0b00000011i32), 12i32);
+        }
+
+        // first one gets to shift in zeros
+        let curr = *self.v.get_unchecked(0);
+        // permute concatenates a vector of zeros and the first half of the first vector
+        *self.v.get_unchecked_mut(0) = _mm256_alignr_epi8(curr, _mm256_permute2x128_si256(curr, curr, 0b00001000i32), 12i32);
+    }
+
+    operation_param2!("avx2", add, _mm256_add_epi32);
+    operation_param2!("avx2", adds, _mm256_adds_epu32);
+    operation_param2!("avx2", andnot, _mm256_andnot_si256);
+    operation_param2!("avx2", cmpeq, _mm256_cmpeq_epi32);
+    operation_param2!("avx2", min, _mm256_min_epu32);
+    operation_param2!("avx2", max, _mm256_max_epu32);
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn shift_left_1(a: &Self, res: &mut Self) {
+        for i in 0..(a.v.len() - 1) {
+            let curr = *a.v.get_unchecked(i);
+            // permute concatenates the second half of the current vector and the first half of the next vector
+            *res.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
+                _mm256_permute2x128_si256(curr, *a.v.get_unchecked(i + 1), 0b00100001i32), curr, 4i32);
+        }
+
+        // last one gets to shift in zeros
+        let last = a.v.len() - 1;
+        let curr = *a.v.get_unchecked(last);
+        // permute concatenates the second half of the last vector and a vector of zeros
+        *res.v.get_unchecked_mut(last) = _mm256_alignr_epi8(_mm256_permute2x128_si256(curr, curr, 0b10000001i32), curr, 4i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn shift_right_1(a: &Self, res: &mut Self) {
+        for i in (1..a.v.len()).rev() {
+            let curr = *a.v.get_unchecked(i);
+            // permute concatenates the second half of the previous vector and the first half of the current vector
+            *res.v.get_unchecked_mut(i) = _mm256_alignr_epi8(
+                curr, _mm256_permute2x128_si256(curr, *a.v.get_unchecked(i - 1), 0b00000011i32), 12i32);
+        }
+
+        // first one gets to shift in zeros
+        let curr = *a.v.get_unchecked(0);
+        // permute concatenates a vector of zeros and the first half of the first vector
+        *res.v.get_unchecked_mut(0) = _mm256_alignr_epi8(curr, _mm256_permute2x128_si256(curr, curr, 0b00001000i32), 12i32);
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self {
+        // return the edit used in addition to doing a min operation
+        // hide latency by minimizing dependencies
+        let mut v = Vec::with_capacity(sub.v.len());
+        let twos = _mm256_set1_epi32(2);
+
+        for i in 0..sub.v.len() {
+            let sub = *sub.v.get_unchecked(i);
+            let a_gap = *a_gap.v.get_unchecked(i);
+            let b_gap = *b_gap.v.get_unchecked(i);
+
+            let res_min1 = _mm256_min_epu32(a_gap, b_gap);
+            // a gap: 2 + -1 = 1, b gap: 2 + 0 = 2
+            let res_arg1 = _mm256_add_epi32(twos, _mm256_cmpeq_epi32(a_gap, res_min1));
+
+            let res_min2 = _mm256_min_epu32(sub, res_min1);
+            // sub: 0
+            let res_arg2 = _mm256_andnot_si256(_mm256_cmpeq_epi32(sub, res_min2), res_arg1);
+
+            *res_min.v.get_unchecked_mut(i) = res_min2;
+            v.push(res_arg2);
+        }
+
+        Self{
+            v: v
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn triple_min_length(sub: &Self, a_gap: &Self,
+                                b_gap: &Self, sub_length: &Self, a_gap_length: &Self,
+                                b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self) {
+        // choose the length based on which edit is chosen during the min operation
+        // hide latency by minimizing dependencies
+        // secondary objective of maximizing length if edit costs equal
+        for i in 0..sub.v.len() {
+            let sub = *sub.v.get_unchecked(i);
+            let a_gap = *a_gap.v.get_unchecked(i);
+            let b_gap = *b_gap.v.get_unchecked(i);
+            let sub_length = *sub_length.v.get_unchecked(i);
+            let a_gap_length = *a_gap_length.v.get_unchecked(i);
+            let b_gap_length = *b_gap_length.v.get_unchecked(i);
+
+            let res_min1 = _mm256_min_epu32(a_gap, b_gap);
+            let a_b_gt_mask = _mm256_cmpeq_epi32(a_gap, res_min1); // a gap: -1, b gap: 0
+            let mut res_length1 = _mm256_blendv_epi8(b_gap_length, a_gap_length, a_b_gt_mask); // lengths based on edits
+            let a_b_eq_mask = _mm256_cmpeq_epi32(a_gap, b_gap); // equal: -1
+            let a_b_max_len = _mm256_max_epu32(a_gap_length, b_gap_length);
+            res_length1 = _mm256_blendv_epi8(res_length1, a_b_max_len, a_b_eq_mask); // maximize length if edits equal
+
+            let res_min2 = _mm256_min_epu32(sub, res_min1);
+            let sub_gt_mask = _mm256_cmpeq_epi32(sub, res_min2); // sub: -1, prev a or b gap: 0
+            let mut res_length2 = _mm256_blendv_epi8(res_length1, sub_length, sub_gt_mask); // length based on edits
+            let sub_eq_mask = _mm256_cmpeq_epi32(sub, res_min1);
+            let sub_max_len = _mm256_max_epu32(sub_length, res_length1);
+            res_length2 = _mm256_blendv_epi8(res_length2, sub_max_len, sub_eq_mask); // maximize length if edits equal
+
+            *res_min.v.get_unchecked_mut(i) = res_min2;
+            *res_length.v.get_unchecked_mut(i) = res_length2;
+        }
+    }
+}
+
+// this implementation will probably only be used for debugging
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+impl fmt::Display for AvxNx8x32 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        unsafe {
+            #![target_feature(enable = "avx2")]
+            write!(f, "[")?;
+
+            let mut arr = [0u32; 8];
+            let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
+
+            for i in 0..(self.v.len() - 1) {
+                _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(i));
+
+                for j in 0..8 {
+                    write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                }
+            }
+
+            // leftover elements
+
+            _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
+
+            let start = (self.v.len() - 1) << 3;
+
+            for i in 0..(self.upper_bound() - start) {
+                if i == self.upper_bound() - start - 1 {
+                    write!(f, "{:>3}", *arr.get_unchecked(i))?;
+                }else{
+                    write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                }
+            }
+
+            write!(f, "]")
+        }
+    }
+}
 
 /// N x 16 x 8 vector backed with 128-bit SSE vectors
 macro_rules! create_sse_nx16x8 {
@@ -644,7 +1326,7 @@ macro_rules! create_sse_nx16x8 {
             unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self {
                 // return the edit used in addition to doing a min operation
                 // hide latency by minimizing dependencies
-                let mut v = [_mm_setzero_si128(); $num];
+                let mut v = [_mm_undefined_si128(); $num];
                 let twos = _mm_set1_epi8(2);
 
                 for i in 0..sub.v.len() {
@@ -750,6 +1432,638 @@ create_sse_nx16x8!(Sse2x16x8, 2);
 create_sse_nx16x8!(Sse4x16x8, 4);
 create_sse_nx16x8!(Sse8x16x8, 8);
 create_sse_nx16x8!(Sse16x16x8, 16);
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub struct SseNx8x16 {
+    v: Vec<__m128i>
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+impl Jewel for SseNx8x16 {
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn repeating(val: u32, len: usize) -> Self {
+        let v = vec![_mm_set1_epi16(val as i16); (len >> 3) + if (len & 7) > 0 {1} else {0}];
+
+        Self{
+            v: v
+        }
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn repeating_max(len: usize) -> Self {
+        let v = vec![_mm_set1_epi16(-1i16); (len >> 3) + if (len & 7) > 0 {1} else {0}];
+
+        Self{
+            v: v
+        }
+    }
+
+    #[inline]
+    fn upper_bound(&self) -> usize {
+        self.v.len() << 3
+    }
+
+    #[inline]
+    fn static_upper_bound() -> usize {
+        unimplemented!()
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn slow_loadu(&mut self, idx: usize, ptr: *const u8, len: usize, reverse: bool) {
+        if len == 0 {
+            return;
+        }
+
+        let mut arr = [0u16; 8];
+        let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
+
+        for i in 0..len {
+            let curr_idx = if reverse {idx - i} else {idx + i};
+            let arr_idx = curr_idx & 7;
+
+            if arr_idx == 0 || i == 0 {
+                _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(curr_idx >> 3));
+            }
+
+            *arr.get_unchecked_mut(arr_idx) = *ptr.offset(i as isize) as u16;
+
+            if arr_idx == 7 || i == len - 1 {
+                *self.v.get_unchecked_mut(curr_idx >> 3) = _mm_loadu_si128(arr_ptr);
+            }
+        }
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn slow_extract(&self, i: usize) -> u32 {
+        let idx = i >> 3;
+        let j = i & 7;
+        let mut arr = [0u16; 8];
+        _mm_storeu_si128(arr.as_mut_ptr() as *mut __m128i, *self.v.get_unchecked(idx));
+        *arr.get_unchecked(j) as u32
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn slow_insert(&mut self, i: usize, val: u32) {
+        let idx = i >> 3;
+        let j = i & 7;
+        let mut arr = [0u16; 8];
+        let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
+        _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(idx));
+        *arr.get_unchecked_mut(j) = val as u16;
+        *self.v.get_unchecked_mut(idx) = _mm_loadu_si128(arr_ptr);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn insert_last_0(&mut self, val: u32) {
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm_insert_epi16(*self.v.get_unchecked(last), val as i32, 7i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn insert_last_1(&mut self, val: u32) {
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm_insert_epi16(*self.v.get_unchecked(last), val as i32, 6i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn insert_last_2(&mut self, val: u32) {
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm_insert_epi16(*self.v.get_unchecked(last), val as i32, 5i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn insert_last_max(&mut self) {
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm_insert_epi16(*self.v.get_unchecked(last), u16::MAX as i32, 7i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn insert_first(&mut self, val: u32) {
+        *self.v.get_unchecked_mut(0) = _mm_insert_epi16(*self.v.get_unchecked(0), val as i32, 0i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn insert_first_max(&mut self) {
+        *self.v.get_unchecked_mut(0) = _mm_insert_epi16(*self.v.get_unchecked(0), u16::MAX as i32, 0i32);
+    }
+
+    operation_mut_param2!("sse4.1", add_mut, _mm_add_epi16);
+    operation_mut_param2!("sse4.1", adds_mut, _mm_adds_epu16);
+    operation_mut_param2!("sse4.1", and_mut, _mm_and_si128);
+    operation_mut_param2!("sse4.1", andnot_mut, _mm_andnot_si128);
+    operation_mut_param2!("sse4.1", cmpeq_mut, _mm_cmpeq_epi16);
+    operation_mut_param2!("sse4.1", min_mut, _mm_min_epu16);
+    operation_mut_param2!("sse4.1", max_mut, _mm_max_epu16);
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn blendv_mut(&mut self, b: &Self, mask: &Self) {
+        for i in 0..self.v.len() {
+            *self.v.get_unchecked_mut(i) = _mm_blendv_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i), *mask.v.get_unchecked(i));
+        }
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn shift_left_1_mut(&mut self) {
+        for i in 0..(self.v.len() - 1) {
+            *self.v.get_unchecked_mut(i) = _mm_alignr_epi8(*self.v.get_unchecked(i + 1), *self.v.get_unchecked(i), 2i32);
+        }
+
+        // last one gets to shift in zeros
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm_srli_si128(*self.v.get_unchecked(last), 2i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn shift_left_2_mut(&mut self) {
+        for i in 0..(self.v.len() - 1) {
+            *self.v.get_unchecked_mut(i) = _mm_alignr_epi8(*self.v.get_unchecked(i + 1), *self.v.get_unchecked(i), 4i32);
+        }
+
+        // last one gets to shift in zeros
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm_srli_si128(*self.v.get_unchecked(last), 4i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn shift_right_1_mut(&mut self) {
+        for i in (1..self.v.len()).rev() {
+            *self.v.get_unchecked_mut(i) = _mm_alignr_epi8(*self.v.get_unchecked(i), *self.v.get_unchecked(i - 1), 14i32);
+        }
+
+        // first one gets to shift in zeros
+        *self.v.get_unchecked_mut(0) = _mm_slli_si128(*self.v.get_unchecked(0), 2i32);
+    }
+
+    operation_param2!("sse4.1", add, _mm_add_epi16);
+    operation_param2!("sse4.1", adds, _mm_adds_epu16);
+    operation_param2!("sse4.1", andnot, _mm_andnot_si128);
+    operation_param2!("sse4.1", cmpeq, _mm_cmpeq_epi16);
+    operation_param2!("sse4.1", min, _mm_min_epu16);
+    operation_param2!("sse4.1", max, _mm_max_epu16);
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn shift_left_1(a: &Self, res: &mut Self) {
+        for i in 0..(a.v.len() - 1) {
+            *res.v.get_unchecked_mut(i) = _mm_alignr_epi8(*a.v.get_unchecked(i + 1), *a.v.get_unchecked(i), 2i32);
+        }
+
+        // last one gets to shift in zeros
+        let last = a.v.len() - 1;
+        *res.v.get_unchecked_mut(last) = _mm_srli_si128(*a.v.get_unchecked(last), 2i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn shift_right_1(a: &Self, res: &mut Self) {
+        for i in (1..a.v.len()).rev() {
+            *res.v.get_unchecked_mut(i) = _mm_alignr_epi8(*a.v.get_unchecked(i), *a.v.get_unchecked(i - 1), 14i32);
+        }
+
+        // first one gets to shift in zeros
+        *res.v.get_unchecked_mut(0) = _mm_slli_si128(*a.v.get_unchecked(0), 2i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self {
+        // return the edit used in addition to doing a min operation
+        // hide latency by minimizing dependencies
+        let mut v = Vec::with_capacity(sub.v.len());
+        let twos = _mm_set1_epi16(2);
+
+        for i in 0..sub.v.len() {
+            let sub = *sub.v.get_unchecked(i);
+            let a_gap = *a_gap.v.get_unchecked(i);
+            let b_gap = *b_gap.v.get_unchecked(i);
+
+            let res_min1 = _mm_min_epu16(a_gap, b_gap);
+            // a gap: 2 + -1 = 1, b gap: 2 + 0 = 2
+            let res_arg1 = _mm_add_epi16(twos, _mm_cmpeq_epi16(a_gap, res_min1));
+
+            let res_min2 = _mm_min_epu16(sub, res_min1);
+            // sub: 0
+            let res_arg2 = _mm_andnot_si128(_mm_cmpeq_epi16(sub, res_min2), res_arg1);
+
+            *res_min.v.get_unchecked_mut(i) = res_min2;
+            v.push(res_arg2);
+        }
+
+        Self{
+            v: v
+        }
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn triple_min_length(sub: &Self, a_gap: &Self,
+                                b_gap: &Self, sub_length: &Self, a_gap_length: &Self,
+                                b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self) {
+        // choose the length based on which edit is chosen during the min operation
+        // hide latency by minimizing dependencies
+        // secondary objective of maximizing length if edit costs equal
+        for i in 0..sub.v.len() {
+            let sub = *sub.v.get_unchecked(i);
+            let a_gap = *a_gap.v.get_unchecked(i);
+            let b_gap = *b_gap.v.get_unchecked(i);
+            let sub_length = *sub_length.v.get_unchecked(i);
+            let a_gap_length = *a_gap_length.v.get_unchecked(i);
+            let b_gap_length = *b_gap_length.v.get_unchecked(i);
+
+            let res_min1 = _mm_min_epu16(a_gap, b_gap);
+            let a_b_gt_mask = _mm_cmpeq_epi16(a_gap, res_min1); // a gap: -1, b gap: 0
+            let mut res_length1 = _mm_blendv_epi8(b_gap_length, a_gap_length, a_b_gt_mask); // lengths based on edits
+            let a_b_eq_mask = _mm_cmpeq_epi16(a_gap, b_gap); // equal: -1
+            let a_b_max_len = _mm_max_epu16(a_gap_length, b_gap_length);
+            res_length1 = _mm_blendv_epi8(res_length1, a_b_max_len, a_b_eq_mask); // maximize length if edits equal
+
+            let res_min2 = _mm_min_epu16(sub, res_min1);
+            let sub_gt_mask = _mm_cmpeq_epi16(sub, res_min2); // sub: -1, prev a or b gap: 0
+            let mut res_length2 = _mm_blendv_epi8(res_length1, sub_length, sub_gt_mask); // length based on edits
+            let sub_eq_mask = _mm_cmpeq_epi16(sub, res_min1);
+            let sub_max_len = _mm_max_epu16(sub_length, res_length1);
+            res_length2 = _mm_blendv_epi8(res_length2, sub_max_len, sub_eq_mask); // maximize length if edits equal
+
+            *res_min.v.get_unchecked_mut(i) = res_min2;
+            *res_length.v.get_unchecked_mut(i) = res_length2;
+        }
+    }
+}
+
+// this implementation will probably only be used for debugging
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+impl fmt::Display for SseNx8x16 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        unsafe {
+            #![target_feature(enable = "sse4.1")]
+            write!(f, "[")?;
+
+            let mut arr = [0u16; 8];
+            let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
+
+            for i in 0..(self.v.len() - 1) {
+                _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(i));
+
+                for j in 0..8 {
+                    write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                }
+            }
+
+            // leftover elements
+
+            _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
+
+            let start = (self.v.len() - 1) << 3;
+
+            for i in 0..(self.upper_bound() - start) {
+                if i == self.upper_bound() - start - 1 {
+                    write!(f, "{:>3}", *arr.get_unchecked(i))?;
+                }else{
+                    write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                }
+            }
+
+            write!(f, "]")
+        }
+    }
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub struct SseNx4x32 {
+    v: Vec<__m128i>
+}
+
+/// Workaround for the lack of the _mm_adds_epu32 intrinsic.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[target_feature(enable = "sse4.1")]
+#[inline]
+unsafe fn _mm_adds_epu32(a: __m128i, b: __m128i) -> __m128i {
+    let sum = _mm_add_epi32(a, b);
+    let min = _mm_min_epu32(a, sum);
+    let eq = _mm_cmpeq_epi32(a, min);
+    // if the sum is less than a, then saturate
+    _mm_blendv_epi8(_mm_set1_epi32(-1i32), sum, eq)
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+impl Jewel for SseNx4x32 {
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn repeating(val: u32, len: usize) -> Self {
+        let v = vec![_mm_set1_epi32(val as i32); (len >> 2) + if (len & 3) > 0 {1} else {0}];
+
+        Self{
+            v: v
+        }
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn repeating_max(len: usize) -> Self {
+        let v = vec![_mm_set1_epi32(-1i32); (len >> 2) + if (len & 3) > 0 {1} else {0}];
+
+        Self{
+            v: v
+        }
+    }
+
+    #[inline]
+    fn upper_bound(&self) -> usize {
+        self.v.len() << 2
+    }
+
+    #[inline]
+    fn static_upper_bound() -> usize {
+        unimplemented!()
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn slow_loadu(&mut self, idx: usize, ptr: *const u8, len: usize, reverse: bool) {
+        if len == 0 {
+            return;
+        }
+
+        let mut arr = [0u32; 4];
+        let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
+
+        for i in 0..len {
+            let curr_idx = if reverse {idx - i} else {idx + i};
+            let arr_idx = curr_idx & 3;
+
+            if arr_idx == 0 || i == 0 {
+                _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(curr_idx >> 2));
+            }
+
+            *arr.get_unchecked_mut(arr_idx) = *ptr.offset(i as isize) as u32;
+
+            if arr_idx == 3 || i == len - 1 {
+                *self.v.get_unchecked_mut(curr_idx >> 2) = _mm_loadu_si128(arr_ptr);
+            }
+        }
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn slow_extract(&self, i: usize) -> u32 {
+        let idx = i >> 2;
+        let j = i & 3;
+        let mut arr = [0u32; 4];
+        _mm_storeu_si128(arr.as_mut_ptr() as *mut __m128i, *self.v.get_unchecked(idx));
+        *arr.get_unchecked(j)
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn slow_insert(&mut self, i: usize, val: u32) {
+        let idx = i >> 2;
+        let j = i & 3;
+        let mut arr = [0u32; 4];
+        let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
+        _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(idx));
+        *arr.get_unchecked_mut(j) = val;
+        *self.v.get_unchecked_mut(idx) = _mm_loadu_si128(arr_ptr);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn insert_last_0(&mut self, val: u32) {
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm_insert_epi32(*self.v.get_unchecked(last), val as i32, 3i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn insert_last_1(&mut self, val: u32) {
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm_insert_epi32(*self.v.get_unchecked(last), val as i32, 2i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn insert_last_2(&mut self, val: u32) {
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm_insert_epi32(*self.v.get_unchecked(last), val as i32, 1i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn insert_last_max(&mut self) {
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm_insert_epi32(*self.v.get_unchecked(last), -1i32, 3i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn insert_first(&mut self, val: u32) {
+        *self.v.get_unchecked_mut(0) = _mm_insert_epi32(*self.v.get_unchecked(0), val as i32, 0i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn insert_first_max(&mut self) {
+        *self.v.get_unchecked_mut(0) = _mm_insert_epi32(*self.v.get_unchecked(0), -1i32, 0i32);
+    }
+
+    operation_mut_param2!("sse4.1", add_mut, _mm_add_epi32);
+    operation_mut_param2!("sse4.1", adds_mut, _mm_adds_epu32);
+    operation_mut_param2!("sse4.1", and_mut, _mm_and_si128);
+    operation_mut_param2!("sse4.1", andnot_mut, _mm_andnot_si128);
+    operation_mut_param2!("sse4.1", cmpeq_mut, _mm_cmpeq_epi32);
+    operation_mut_param2!("sse4.1", min_mut, _mm_min_epu32);
+    operation_mut_param2!("sse4.1", max_mut, _mm_max_epu32);
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn blendv_mut(&mut self, b: &Self, mask: &Self) {
+        for i in 0..self.v.len() {
+            *self.v.get_unchecked_mut(i) = _mm_blendv_epi8(*self.v.get_unchecked(i), *b.v.get_unchecked(i), *mask.v.get_unchecked(i));
+        }
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn shift_left_1_mut(&mut self) {
+        for i in 0..(self.v.len() - 1) {
+            *self.v.get_unchecked_mut(i) = _mm_alignr_epi8(*self.v.get_unchecked(i + 1), *self.v.get_unchecked(i), 4i32);
+        }
+
+        // last one gets to shift in zeros
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm_srli_si128(*self.v.get_unchecked(last), 4i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn shift_left_2_mut(&mut self) {
+        for i in 0..(self.v.len() - 1) {
+            *self.v.get_unchecked_mut(i) = _mm_alignr_epi8(*self.v.get_unchecked(i + 1), *self.v.get_unchecked(i), 8i32);
+        }
+
+        // last one gets to shift in zeros
+        let last = self.v.len() - 1;
+        *self.v.get_unchecked_mut(last) = _mm_srli_si128(*self.v.get_unchecked(last), 8i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn shift_right_1_mut(&mut self) {
+        for i in (1..self.v.len()).rev() {
+            *self.v.get_unchecked_mut(i) = _mm_alignr_epi8(*self.v.get_unchecked(i), *self.v.get_unchecked(i - 1), 12i32);
+        }
+
+        // first one gets to shift in zeros
+        *self.v.get_unchecked_mut(0) = _mm_slli_si128(*self.v.get_unchecked(0), 4i32);
+    }
+
+    operation_param2!("sse4.1", add, _mm_add_epi32);
+    operation_param2!("sse4.1", adds, _mm_adds_epu32);
+    operation_param2!("sse4.1", andnot, _mm_andnot_si128);
+    operation_param2!("sse4.1", cmpeq, _mm_cmpeq_epi32);
+    operation_param2!("sse4.1", min, _mm_min_epu32);
+    operation_param2!("sse4.1", max, _mm_max_epu32);
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn shift_left_1(a: &Self, res: &mut Self) {
+        for i in 0..(a.v.len() - 1) {
+            *res.v.get_unchecked_mut(i) = _mm_alignr_epi8(*a.v.get_unchecked(i + 1), *a.v.get_unchecked(i), 4i32);
+        }
+
+        // last one gets to shift in zeros
+        let last = a.v.len() - 1;
+        *res.v.get_unchecked_mut(last) = _mm_srli_si128(*a.v.get_unchecked(last), 4i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn shift_right_1(a: &Self, res: &mut Self) {
+        for i in (1..a.v.len()).rev() {
+            *res.v.get_unchecked_mut(i) = _mm_alignr_epi8(*a.v.get_unchecked(i), *a.v.get_unchecked(i - 1), 12i32);
+        }
+
+        // first one gets to shift in zeros
+        *res.v.get_unchecked_mut(0) = _mm_slli_si128(*a.v.get_unchecked(0), 4i32);
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self {
+        // return the edit used in addition to doing a min operation
+        // hide latency by minimizing dependencies
+        let mut v = Vec::with_capacity(sub.v.len());
+        let twos = _mm_set1_epi32(2);
+
+        for i in 0..sub.v.len() {
+            let sub = *sub.v.get_unchecked(i);
+            let a_gap = *a_gap.v.get_unchecked(i);
+            let b_gap = *b_gap.v.get_unchecked(i);
+
+            let res_min1 = _mm_min_epu32(a_gap, b_gap);
+            // a gap: 2 + -1 = 1, b gap: 2 + 0 = 2
+            let res_arg1 = _mm_add_epi32(twos, _mm_cmpeq_epi32(a_gap, res_min1));
+
+            let res_min2 = _mm_min_epu32(sub, res_min1);
+            // sub: 0
+            let res_arg2 = _mm_andnot_si128(_mm_cmpeq_epi32(sub, res_min2), res_arg1);
+
+            *res_min.v.get_unchecked_mut(i) = res_min2;
+            v.push(res_arg2);
+        }
+
+        Self{
+            v: v
+        }
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn triple_min_length(sub: &Self, a_gap: &Self,
+                                b_gap: &Self, sub_length: &Self, a_gap_length: &Self,
+                                b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self) {
+        // choose the length based on which edit is chosen during the min operation
+        // hide latency by minimizing dependencies
+        // secondary objective of maximizing length if edit costs equal
+        for i in 0..sub.v.len() {
+            let sub = *sub.v.get_unchecked(i);
+            let a_gap = *a_gap.v.get_unchecked(i);
+            let b_gap = *b_gap.v.get_unchecked(i);
+            let sub_length = *sub_length.v.get_unchecked(i);
+            let a_gap_length = *a_gap_length.v.get_unchecked(i);
+            let b_gap_length = *b_gap_length.v.get_unchecked(i);
+
+            let res_min1 = _mm_min_epu32(a_gap, b_gap);
+            let a_b_gt_mask = _mm_cmpeq_epi32(a_gap, res_min1); // a gap: -1, b gap: 0
+            let mut res_length1 = _mm_blendv_epi8(b_gap_length, a_gap_length, a_b_gt_mask); // lengths based on edits
+            let a_b_eq_mask = _mm_cmpeq_epi32(a_gap, b_gap); // equal: -1
+            let a_b_max_len = _mm_max_epu32(a_gap_length, b_gap_length);
+            res_length1 = _mm_blendv_epi8(res_length1, a_b_max_len, a_b_eq_mask); // maximize length if edits equal
+
+            let res_min2 = _mm_min_epu32(sub, res_min1);
+            let sub_gt_mask = _mm_cmpeq_epi32(sub, res_min2); // sub: -1, prev a or b gap: 0
+            let mut res_length2 = _mm_blendv_epi8(res_length1, sub_length, sub_gt_mask); // length based on edits
+            let sub_eq_mask = _mm_cmpeq_epi32(sub, res_min1);
+            let sub_max_len = _mm_max_epu32(sub_length, res_length1);
+            res_length2 = _mm_blendv_epi8(res_length2, sub_max_len, sub_eq_mask); // maximize length if edits equal
+
+            *res_min.v.get_unchecked_mut(i) = res_min2;
+            *res_length.v.get_unchecked_mut(i) = res_length2;
+        }
+    }
+}
+
+// this implementation will probably only be used for debugging
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+impl fmt::Display for SseNx4x32 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        unsafe {
+            #![target_feature(enable = "sse4.1")]
+            write!(f, "[")?;
+
+            let mut arr = [0u32; 4];
+            let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
+
+            for i in 0..(self.v.len() - 1) {
+                _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(i));
+
+                for j in 0..4 {
+                    write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                }
+            }
+
+            // leftover elements
+
+            _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
+
+            let start = (self.v.len() - 1) << 2;
+
+            for i in 0..(self.upper_bound() - start) {
+                if i == self.upper_bound() - start - 1 {
+                    write!(f, "{:>3}", *arr.get_unchecked(i))?;
+                }else{
+                    write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                }
+            }
+
+            write!(f, "]")
+        }
+    }
+}
 
 pub trait Intrinsic {
     unsafe fn loadu(ptr: *const u8, len: usize) -> Self;
