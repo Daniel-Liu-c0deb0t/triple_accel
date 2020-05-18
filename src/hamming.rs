@@ -411,6 +411,11 @@ macro_rules! create_hamming_search_simd_core {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         #[target_feature(enable = $target)]
         unsafe fn $name(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType) -> Vec<Match> {
+            #[cfg(debug_assertions)]
+            {
+                println!("Debug: Hamming search Jewel vector type {} for target {}.", stringify!($jewel), stringify!($target));
+            }
+
             let needle_len = needle.len();
             let haystack_len = haystack.len();
             let needle_vector = <$jewel>::loadu(needle.as_ptr(), needle_len);

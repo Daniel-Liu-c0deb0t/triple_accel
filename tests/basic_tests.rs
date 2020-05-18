@@ -26,7 +26,6 @@ fn test_basic_hamming_search_simd() {
     let a1 = b"abc";
     let b1 = b"  abc  abb aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     let mut res = hamming_search_simd_with_opts(a1, b1, 1, SearchType::All);
-    println!("{:?}", res);
     assert!(res == vec![Match{start: 2, end: 5, k: 0}, Match{start: 7, end: 10, k: 1}]);
 
     let a2 = b"abc";

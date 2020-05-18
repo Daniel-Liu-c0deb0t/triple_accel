@@ -4,6 +4,13 @@ version = "0.1.0"
 authors = ["c0deb0t <daniel.liu02@gmail.com>"]
 edition = "2018"
 
+[features]
+# automatic selection of which type of Jewel vector to use by default
+default = ["jewel-8bit", "jewel-16bit", "jewel-32bit"]
+jewel-8bit = []
+jewel-16bit = []
+jewel-32bit = []
+
 [profile.release]
 opt-level = 3
 codegen-units = 1
