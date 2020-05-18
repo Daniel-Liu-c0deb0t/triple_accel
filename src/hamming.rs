@@ -287,9 +287,9 @@ pub fn hamming_simd_parallel(a: &[u8], b: &[u8]) -> u32 {
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if is_x86_feature_detected!("avx2") {
+        if cfg!(feature = "jewel-avx") && is_x86_feature_detected!("avx2") {
             return unsafe {Avx::count_mismatches(a.as_ptr(), b.as_ptr(), a.len())};
-        }else if is_x86_feature_detected!("sse4.1") {
+        }else if cfg!(feature = "jewel-sse") && is_x86_feature_detected!("sse4.1") {
             return unsafe {Sse::count_mismatches(a.as_ptr(), b.as_ptr(), a.len())};
         }
     }
@@ -323,9 +323,9 @@ pub fn hamming_simd_movemask(a: &[u8], b: &[u8]) -> u32 {
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if is_x86_feature_detected!("avx2") {
+        if cfg!(feature = "jewel-avx") && is_x86_feature_detected!("avx2") {
             return unsafe {Avx::mm_count_mismatches(a.as_ptr(), b.as_ptr(), a.len())};
-        }else if is_x86_feature_detected!("sse4.1") {
+        }else if cfg!(feature = "jewel-sse") && is_x86_feature_detected!("sse4.1") {
             return unsafe {Sse::mm_count_mismatches(a.as_ptr(), b.as_ptr(), a.len())};
         }
     }
@@ -396,9 +396,9 @@ pub fn hamming_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32, sea
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        if is_x86_feature_detected!("avx2") {
+        if cfg!(feature = "jewel-avx") && is_x86_feature_detected!("avx2") {
             return unsafe {hamming_search_simd_core_avx(needle, haystack, k, search_type)};
-        }else if is_x86_feature_detected!("sse4.1") {
+        }else if cfg!(feature = "jewel-sse") && is_x86_feature_detected!("sse4.1") {
             return unsafe {hamming_search_simd_core_sse(needle, haystack, k, search_type)};
         }
     }

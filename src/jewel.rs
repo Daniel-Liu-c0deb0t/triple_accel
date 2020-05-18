@@ -134,18 +134,20 @@ macro_rules! create_avx_nx32x8 {
 
                 let mut arr = [0u8; 32];
                 let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
+                let store_idx = if reverse {31} else {0};
+                let load_idx = if reverse {0} else {31};
 
                 for i in 0..len {
                     let curr_idx = if reverse {idx - i} else {idx + i};
                     let arr_idx = curr_idx & 31;
 
-                    if arr_idx == 0 || i == 0 {
+                    if arr_idx == store_idx || i == 0 {
                         _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(curr_idx >> 5));
                     }
 
                     *arr.get_unchecked_mut(arr_idx) = *ptr.offset(i as isize);
 
-                    if arr_idx == 31 || i == len - 1 {
+                    if arr_idx == load_idx || i == len - 1 {
                         *self.v.get_unchecked_mut(curr_idx >> 5) = _mm256_loadu_si256(arr_ptr);
                     }
                 }
@@ -476,18 +478,20 @@ impl Jewel for AvxNx16x16 {
 
         let mut arr = [0u16; 16];
         let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
+        let store_idx = if reverse {15} else {0};
+        let load_idx = if reverse {0} else {15};
 
         for i in 0..len {
             let curr_idx = if reverse {idx - i} else {idx + i};
             let arr_idx = curr_idx & 15;
 
-            if arr_idx == 0 || i == 0 {
+            if arr_idx == store_idx || i == 0 {
                 _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(curr_idx >> 4));
             }
 
             *arr.get_unchecked_mut(arr_idx) = *ptr.offset(i as isize) as u16;
 
-            if arr_idx == 15 || i == len - 1 {
+            if arr_idx == load_idx || i == len - 1 {
                 *self.v.get_unchecked_mut(curr_idx >> 4) = _mm256_loadu_si256(arr_ptr);
             }
         }
@@ -779,6 +783,7 @@ unsafe fn _mm256_adds_epu32(a: __m256i, b: __m256i) -> __m256i {
     let min = _mm256_min_epu32(a, sum);
     let eq = _mm256_cmpeq_epi32(a, min);
     // if the sum is less than a, then saturate
+    // note: sum is either greater than both a and b or less than both
     _mm256_blendv_epi8(_mm256_set1_epi32(-1i32), sum, eq)
 }
 
@@ -823,18 +828,20 @@ impl Jewel for AvxNx8x32 {
 
         let mut arr = [0u32; 8];
         let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
+        let store_idx = if reverse {7} else {0};
+        let load_idx = if reverse {0} else {7};
 
         for i in 0..len {
             let curr_idx = if reverse {idx - i} else {idx + i};
             let arr_idx = curr_idx & 7;
 
-            if arr_idx == 0 || i == 0 {
+            if arr_idx == store_idx || i == 0 {
                 _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(curr_idx >> 3));
             }
 
             *arr.get_unchecked_mut(arr_idx) = *ptr.offset(i as isize) as u32;
 
-            if arr_idx == 7 || i == len - 1 {
+            if arr_idx == load_idx || i == len - 1 {
                 *self.v.get_unchecked_mut(curr_idx >> 3) = _mm256_loadu_si256(arr_ptr);
             }
         }
@@ -1161,18 +1168,20 @@ macro_rules! create_sse_nx16x8 {
 
                 let mut arr = [0u8; 16];
                 let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
+                let store_idx = if reverse {15} else {0};
+                let load_idx = if reverse {0} else {15};
 
                 for i in 0..len {
                     let curr_idx = if reverse {idx - i} else {idx + i};
                     let arr_idx = curr_idx & 15;
 
-                    if arr_idx == 0 || i == 0 {
+                    if arr_idx == store_idx || i == 0 {
                         _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(curr_idx >> 4));
                     }
 
                     *arr.get_unchecked_mut(arr_idx) = *ptr.offset(i as isize);
 
-                    if arr_idx == 15 || i == len - 1 {
+                    if arr_idx == load_idx || i == len - 1 {
                         *self.v.get_unchecked_mut(curr_idx >> 4) = _mm_loadu_si128(arr_ptr);
                     }
                 }
@@ -1479,18 +1488,20 @@ impl Jewel for SseNx8x16 {
 
         let mut arr = [0u16; 8];
         let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
+        let store_idx = if reverse {7} else {0};
+        let load_idx = if reverse {0} else {7};
 
         for i in 0..len {
             let curr_idx = if reverse {idx - i} else {idx + i};
             let arr_idx = curr_idx & 7;
 
-            if arr_idx == 0 || i == 0 {
+            if arr_idx == store_idx || i == 0 {
                 _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(curr_idx >> 3));
             }
 
             *arr.get_unchecked_mut(arr_idx) = *ptr.offset(i as isize) as u16;
 
-            if arr_idx == 7 || i == len - 1 {
+            if arr_idx == load_idx || i == len - 1 {
                 *self.v.get_unchecked_mut(curr_idx >> 3) = _mm_loadu_si128(arr_ptr);
             }
         }
@@ -1757,6 +1768,7 @@ unsafe fn _mm_adds_epu32(a: __m128i, b: __m128i) -> __m128i {
     let min = _mm_min_epu32(a, sum);
     let eq = _mm_cmpeq_epi32(a, min);
     // if the sum is less than a, then saturate
+    // note: sum is either greater than both a and b or less than both
     _mm_blendv_epi8(_mm_set1_epi32(-1i32), sum, eq)
 }
 
@@ -1801,18 +1813,20 @@ impl Jewel for SseNx4x32 {
 
         let mut arr = [0u32; 4];
         let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
+        let store_idx = if reverse {3} else {0};
+        let load_idx = if reverse {0} else {3};
 
         for i in 0..len {
             let curr_idx = if reverse {idx - i} else {idx + i};
             let arr_idx = curr_idx & 3;
 
-            if arr_idx == 0 || i == 0 {
+            if arr_idx == store_idx || i == 0 {
                 _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(curr_idx >> 2));
             }
 
             *arr.get_unchecked_mut(arr_idx) = *ptr.offset(i as isize) as u32;
 
-            if arr_idx == 3 || i == len - 1 {
+            if arr_idx == load_idx || i == len - 1 {
                 *self.v.get_unchecked_mut(curr_idx >> 2) = _mm_loadu_si128(arr_ptr);
             }
         }
