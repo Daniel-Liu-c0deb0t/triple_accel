@@ -116,6 +116,16 @@ fn test_basic_levenshtein_naive() {
     let b7 = b"ba";
     res = levenshtein_naive_with_opts(a7, b7, false, EditCosts::new(1, 1, Some(1))).0;
     assert!(res == 1);
+
+    let a8 = b"abc";
+    let b8 = b"aac";
+    res = levenshtein_naive_with_opts(a8, b8, false, EditCosts::new(2, 3, None)).0;
+    assert!(res == 2);
+
+    let a9 = b"abc";
+    let b9 = b"aac";
+    res = levenshtein_naive_with_opts(a9, b9, false, EditCosts::new(3, 1, None)).0;
+    assert!(res == 2);
 }
 
 #[test]
@@ -260,6 +270,18 @@ fn test_basic_levenshtein_naive_k_with_opts() {
     res = levenshtein_naive_k_with_opts(a8, b8, 1, false, EditCosts::new(1, 1, Some(1))).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.is_none());
+
+    let a9 = b"abc";
+    let b9 = b"aac";
+    res = levenshtein_naive_k_with_opts(a9, b9, 5, false, EditCosts::new(2, 3, None)).unwrap();
+    assert!(res.0 == 2);
+    assert!(res.1.is_none());
+
+    let a10 = b"abc";
+    let b10 = b"aac";
+    res = levenshtein_naive_k_with_opts(a10, b10, 5, false, EditCosts::new(3, 1, None)).unwrap();
+    assert!(res.0 == 2);
+    assert!(res.1.is_none());
 }
 
 #[test]
@@ -339,6 +361,18 @@ fn test_basic_levenshtein_simd_k_with_opts() {
     res = levenshtein_simd_k_with_opts(a7, b7, 2, false, EditCosts::new(1, 1, Some(1))).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.is_none());
+
+    let a8 = b"abc";
+    let b8 = b"aac";
+    res = levenshtein_simd_k_with_opts(a8, b8, 5, false, EditCosts::new(2, 3, None)).unwrap();
+    assert!(res.0 == 2);
+    assert!(res.1.is_none());
+
+    let a9 = b"abc";
+    let b9 = b"aac";
+    res = levenshtein_simd_k_with_opts(a9, b9, 5, false, EditCosts::new(3, 1, None)).unwrap();
+    assert!(res.0 == 2);
+    assert!(res.1.is_none());
 }
 
 #[test]
@@ -417,6 +451,36 @@ fn test_basic_levenshtein_search_naive() {
     let k7 = 1;
     res = levenshtein_search_naive_with_opts(a7, b7, k7, SearchType::All, EditCosts::new(1, 1, Some(1)), false);
     assert!(res == vec![Match{start: 3, end: 7, k: 1}]);
+
+    let a8 = b"test";
+    let b8 = b"...tssting!";
+    let k8 = 2;
+    res = levenshtein_search_naive_with_opts(a8, b8, k8, SearchType::All, EditCosts::new(3, 1, None), false);
+    assert!(res == vec![Match{start: 3, end: 5, k: 2}, Match{start: 3, end: 7, k: 2}]);
+
+    let a9 = b"tst";
+    let b9 = b"testing 123 tasting";
+    let k9 = 1;
+    res = levenshtein_search_naive_with_opts(a9, b9, k9, SearchType::First, LEVENSHTEIN_COSTS, false);
+    assert!(res == vec![Match{start: 0, end: 4, k: 1}]);
+
+    let a10 = b"test";
+    let b10 = b" testing 123 tasting";
+    let k10 = 1;
+    res = levenshtein_search_naive_with_opts(a10, b10, k10, SearchType::All, LEVENSHTEIN_COSTS, true);
+    assert!(res == vec![Match{start: 1, end: 5, k: 1}]);
+
+    let a11 = b"test";
+    let b11 = b" etsting 123 tasting";
+    let k11 = 2;
+    res = levenshtein_search_naive_with_opts(a11, b11, k11, SearchType::All, RDAMERAU_COSTS, true);
+    assert!(res == vec![Match{start: 0, end: 3, k: 2}, Match{start: 0, end: 4, k: 2}, Match{start: 1, end: 5, k: 2}]);
+
+    let a12 = b"test";
+    let b12 = b"etsting";
+    let k12 = 1;
+    res = levenshtein_search_naive_with_opts(a12, b12, k12, SearchType::All, RDAMERAU_COSTS, true);
+    assert!(res == vec![Match{start: 0, end: 4, k: 1}]);
 }
 
 #[test]
@@ -461,5 +525,35 @@ fn test_basic_levenshtein_search_simd() {
     let k7 = 1;
     res = levenshtein_search_simd_with_opts(a7, b7, k7, SearchType::All, EditCosts::new(1, 1, Some(1)), false);
     assert!(res == vec![Match{start: 3, end: 7, k: 1}]);
+
+    let a8 = b"test";
+    let b8 = b"...tssting!";
+    let k8 = 2;
+    res = levenshtein_search_simd_with_opts(a8, b8, k8, SearchType::All, EditCosts::new(3, 1, None), false);
+    assert!(res == vec![Match{start: 3, end: 5, k: 2}, Match{start: 3, end: 7, k: 2}]);
+
+    let a9 = b"tst";
+    let b9 = b"testing 123 tasting";
+    let k9 = 1;
+    res = levenshtein_search_simd_with_opts(a9, b9, k9, SearchType::First, LEVENSHTEIN_COSTS, false);
+    assert!(res == vec![Match{start: 0, end: 4, k: 1}]);
+
+    let a10 = b"test";
+    let b10 = b" testing 123 tasting";
+    let k10 = 1;
+    res = levenshtein_search_simd_with_opts(a10, b10, k10, SearchType::All, LEVENSHTEIN_COSTS, true);
+    assert!(res == vec![Match{start: 1, end: 5, k: 1}]);
+
+    let a11 = b"test";
+    let b11 = b" etsting 123 tasting";
+    let k11 = 2;
+    res = levenshtein_search_simd_with_opts(a11, b11, k11, SearchType::All, RDAMERAU_COSTS, true);
+    assert!(res == vec![Match{start: 0, end: 3, k: 2}, Match{start: 0, end: 4, k: 2}, Match{start: 1, end: 5, k: 2}]);
+
+    let a12 = b"test";
+    let b12 = b"etsting";
+    let k12 = 1;
+    res = levenshtein_search_simd_with_opts(a12, b12, k12, SearchType::All, RDAMERAU_COSTS, true);
+    assert!(res == vec![Match{start: 0, end: 4, k: 1}]);
 }
 

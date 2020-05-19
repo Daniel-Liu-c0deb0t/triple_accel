@@ -1078,8 +1078,8 @@ macro_rules! create_levenshtein_search_simd_core {
                     <$jewel>::andnot(&match_mask1, &transpose, &mut match_mask0); // reuse match_mask0 to represent transpose mask
                     dp0.shift_left_2_mut();
 
-                    if anchored && i > 3 {
-                        dp0.insert_last_1(cmp::min((i as u32 - 2) * (costs.gap_cost as u32), k + 1));
+                    if anchored && i > 2 {
+                        dp0.insert_last_1(cmp::min((i as u32 - 3) * (costs.gap_cost as u32), k + 1));
                     }
 
                     length0.shift_left_2_mut();
