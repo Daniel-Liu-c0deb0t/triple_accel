@@ -27,9 +27,9 @@ pub mod jewel;
 pub mod hamming;
 pub mod levenshtein;
 
-// re-export
-pub use hamming::*;
-pub use levenshtein::*;
+// re-export common functions
+pub use hamming::{hamming, hamming_search};
+pub use levenshtein::{levenshtein, levenshtein_search};
 
 // some shared utility stuff below
 

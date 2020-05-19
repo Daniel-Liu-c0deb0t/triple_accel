@@ -1,6 +1,8 @@
 use criterion::{criterion_group, criterion_main, Criterion, black_box};
 use rand::prelude::*;
 use triple_accel::*;
+use triple_accel::levenshtein::*;
+use triple_accel::hamming::*;
 
 fn bench_rand_hamming(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1234);

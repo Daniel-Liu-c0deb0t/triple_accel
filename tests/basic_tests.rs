@@ -1,4 +1,6 @@
 use triple_accel::*;
+use triple_accel::hamming::*;
+use triple_accel::levenshtein::*;
 
 #[test]
 fn test_basic_hamming_naive() {
@@ -163,62 +165,59 @@ fn test_trace_on_levenshtein_naive() {
 }
 
 #[test]
-fn test_basic_levenshtein_exp() {
+fn test_basic_levenshtein() {
     let a1 = b"abcde";
     let b1 = b" ab cde";
-    let mut res = levenshtein_exp(a1, b1, false);
-    assert!(res.0 == 2);
-    assert!(res.1.is_none());
+    let mut res = levenshtein(a1, b1);
+    assert!(res == 2);
 
     let a2 = b"abcde";
     let b2 = b"";
-    res = levenshtein_exp(a2, b2, false);
-    assert!(res.0 == 5);
-    assert!(res.1.is_none());
+    res = levenshtein(a2, b2);
+    assert!(res == 5);
 
     let a3 = b"abcde";
     let b3 = b"abcdee";
-    res = levenshtein_exp(a3, b3, false);
-    assert!(res.0 == 1);
-    assert!(res.1.is_none());
+    res = levenshtein(a3, b3);
+    assert!(res == 1);
 
     let a4 = b"abcde";
     let b4 = b"acde";
-    res = levenshtein_exp(a4, b4, false);
-    assert!(res.0 == 1);
-    assert!(res.1.is_none());
+    res = levenshtein(a4, b4);
+    assert!(res == 1);
 
     let a5 = b"abcde";
     let b5 = b"abbde";
-    res = levenshtein_exp(a5, b5, false);
-    assert!(res.0 == 1);
-    assert!(res.1.is_none());
+    res = levenshtein(a5, b5);
+    assert!(res == 1);
 }
 
 #[test]
-fn test_trace_on_levenshtein_exp() {
+fn test_basic_levenshtein_exp() {
     let a1 = b"abcde";
     let b1 = b" ab cde";
-    let mut res = levenshtein_exp(a1, b1, true);
-    assert!(res.0 == 2);
-    assert!(res.1.unwrap() == vec![Edit{edit: EditType::AGap, count: 1},
-                                   Edit{edit: EditType::Match, count: 2},
-                                   Edit{edit: EditType::AGap, count: 1},
-                                   Edit{edit: EditType::Match, count: 3}]);
+    let mut res = levenshtein_exp(a1, b1);
+    assert!(res == 2);
 
     let a2 = b"abcde";
     let b2 = b"";
-    res = levenshtein_exp(a2, b2, true);
-    assert!(res.0 == 5);
-    assert!(res.1.unwrap() == vec![Edit{edit: EditType::BGap, count: 5}]);
+    res = levenshtein_exp(a2, b2);
+    assert!(res == 5);
 
     let a3 = b"abcde";
-    let b3 = b"abcce";
-    res = levenshtein_exp(a3, b3, true);
-    assert!(res.0 == 1);
-    assert!(res.1.unwrap() == vec![Edit{edit: EditType::Match, count: 3},
-                                   Edit{edit: EditType::Mismatch, count: 1},
-                                   Edit{edit: EditType::Match, count: 1}]);
+    let b3 = b"abcdee";
+    res = levenshtein_exp(a3, b3);
+    assert!(res == 1);
+
+    let a4 = b"abcde";
+    let b4 = b"acde";
+    res = levenshtein_exp(a4, b4);
+    assert!(res == 1);
+
+    let a5 = b"abcde";
+    let b5 = b"abbde";
+    res = levenshtein_exp(a5, b5);
+    assert!(res == 1);
 }
 
 #[test]

@@ -195,7 +195,9 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
         None => 0
     };
     let allow_transpose = costs.transpose_cost.is_some();
-    let unit_k = (k / gap_cost) as usize;
+    let max_k = cmp::min((a_new_len as u32) * mismatch_cost, ((a_new_len << 1) as u32) * gap_cost);
+    let max_k = cmp::min(k, max_k + ((b_new_len - a_new_len) as u32) * gap_cost);
+    let unit_k = (max_k / gap_cost) as usize;
 
     if b_new_len - a_new_len > unit_k {
         return None;
@@ -285,7 +287,7 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
         mem::swap(&mut dp1, &mut dp2);
     }
 
-    if dp1[hi - lo - 1] > k {
+    if dp1[hi - lo - 1] > max_k {
         return None;
     }
 
@@ -355,38 +357,42 @@ pub fn levenshtein_simd_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool, 
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        let unit_k = cmp::min(k / (costs.gap_cost as u32), cmp::max(a.len(), b.len()) as u32);
+        let min_len = cmp::min(a.len(), b.len()) as u32;
+        let max_len = cmp::max(a.len(), b.len()) as u32;
+        let max_k = cmp::min(min_len * (costs.mismatch_cost as u32), (min_len << 1) * (costs.gap_cost as u32));
+        let max_k = cmp::min(k, max_k + (max_len - min_len) * (costs.gap_cost as u32));
+        let unit_k = cmp::min(max_k / (costs.gap_cost as u32), max_len);
 
         // note: do not use the MAX value, because it indicates overflow/inaccuracy
         if cfg!(feature = "jewel-avx") && is_x86_feature_detected!("avx2") {
-            if cfg!(feature = "jewel-8bit") && unit_k <= (Avx1x32x8::static_upper_bound() as u32 - 2) && k <= ((u8::MAX - 1) as u32) {
-                return unsafe {levenshtein_simd_core_avx_1x32x8(a, b, k, trace_on, costs)};
-            }else if cfg!(feature = "jewel-8bit") && unit_k <= (Avx2x32x8::static_upper_bound() as u32 - 2) && k <= ((u8::MAX - 1) as u32) {
-                return unsafe {levenshtein_simd_core_avx_2x32x8(a, b, k, trace_on, costs)};
-            }else if cfg!(feature = "jewel-8bit") && unit_k <= (Avx4x32x8::static_upper_bound() as u32 - 2) && k <= ((u8::MAX - 1) as u32) {
-                return unsafe {levenshtein_simd_core_avx_4x32x8(a, b, k, trace_on, costs)};
-            }else if cfg!(feature = "jewel-8bit") && unit_k <= (Avx8x32x8::static_upper_bound() as u32 - 2) && k <= ((u8::MAX - 1) as u32) {
-                return unsafe {levenshtein_simd_core_avx_8x32x8(a, b, k, trace_on, costs)};
-            }else if cfg!(feature = "jewel-16bit") && k <= ((u16::MAX - 1) as u32) {
-                return unsafe {levenshtein_simd_core_avx_nx16x16(a, b, k, trace_on, costs)};
+            if cfg!(feature = "jewel-8bit") && unit_k <= (Avx1x32x8::static_upper_bound() as u32 - 2) && max_k <= ((u8::MAX - 1) as u32) {
+                return unsafe {levenshtein_simd_core_avx_1x32x8(a, b, max_k, trace_on, costs)};
+            }else if cfg!(feature = "jewel-8bit") && unit_k <= (Avx2x32x8::static_upper_bound() as u32 - 2) && max_k <= ((u8::MAX - 1) as u32) {
+                return unsafe {levenshtein_simd_core_avx_2x32x8(a, b, max_k, trace_on, costs)};
+            }else if cfg!(feature = "jewel-8bit") && unit_k <= (Avx4x32x8::static_upper_bound() as u32 - 2) && max_k <= ((u8::MAX - 1) as u32) {
+                return unsafe {levenshtein_simd_core_avx_4x32x8(a, b, max_k, trace_on, costs)};
+            }else if cfg!(feature = "jewel-8bit") && unit_k <= (Avx8x32x8::static_upper_bound() as u32 - 2) && max_k <= ((u8::MAX - 1) as u32) {
+                return unsafe {levenshtein_simd_core_avx_8x32x8(a, b, max_k, trace_on, costs)};
+            }else if cfg!(feature = "jewel-16bit") && max_k <= ((u16::MAX - 1) as u32) {
+                return unsafe {levenshtein_simd_core_avx_nx16x16(a, b, max_k, trace_on, costs)};
             }else if cfg!(feature = "jewel-32bit") {
-                return unsafe {levenshtein_simd_core_avx_nx8x32(a, b, k, trace_on, costs)};
+                return unsafe {levenshtein_simd_core_avx_nx8x32(a, b, max_k, trace_on, costs)};
             }
         }else if cfg!(feature = "jewel-sse") && is_x86_feature_detected!("sse4.1") {
-            if cfg!(feature = "jewel-8bit") && unit_k <= (Sse1x16x8::static_upper_bound() as u32 - 2) && k <= ((u8::MAX - 1) as u32) {
-                return unsafe {levenshtein_simd_core_sse_1x16x8(a, b, k, trace_on, costs)};
-            }else if cfg!(feature = "jewel-8bit") && unit_k <= (Sse2x16x8::static_upper_bound() as u32 - 2) && k <= ((u8::MAX - 1) as u32) {
-                return unsafe {levenshtein_simd_core_sse_2x16x8(a, b, k, trace_on, costs)};
-            }else if cfg!(feature = "jewel-8bit") && unit_k <= (Sse4x16x8::static_upper_bound() as u32 - 2) && k <= ((u8::MAX - 1) as u32) {
-                return unsafe {levenshtein_simd_core_sse_4x16x8(a, b, k, trace_on, costs)};
-            }else if cfg!(feature = "jewel-8bit") && unit_k <= (Sse8x16x8::static_upper_bound() as u32 - 2) && k <= ((u8::MAX - 1) as u32) {
-                return unsafe {levenshtein_simd_core_sse_8x16x8(a, b, k, trace_on, costs)};
-            }else if cfg!(feature = "jewel-8bit") && unit_k <= (Sse16x16x8::static_upper_bound() as u32 - 2) && k <= ((u8::MAX - 1) as u32) {
-                return unsafe {levenshtein_simd_core_sse_16x16x8(a, b, k, trace_on, costs)};
-            }else if cfg!(feature = "jewel-16bit") && k <= ((u16::MAX - 1) as u32) {
-                return unsafe {levenshtein_simd_core_sse_nx8x16(a, b, k, trace_on, costs)};
+            if cfg!(feature = "jewel-8bit") && unit_k <= (Sse1x16x8::static_upper_bound() as u32 - 2) && max_k <= ((u8::MAX - 1) as u32) {
+                return unsafe {levenshtein_simd_core_sse_1x16x8(a, b, max_k, trace_on, costs)};
+            }else if cfg!(feature = "jewel-8bit") && unit_k <= (Sse2x16x8::static_upper_bound() as u32 - 2) && max_k <= ((u8::MAX - 1) as u32) {
+                return unsafe {levenshtein_simd_core_sse_2x16x8(a, b, max_k, trace_on, costs)};
+            }else if cfg!(feature = "jewel-8bit") && unit_k <= (Sse4x16x8::static_upper_bound() as u32 - 2) && max_k <= ((u8::MAX - 1) as u32) {
+                return unsafe {levenshtein_simd_core_sse_4x16x8(a, b, max_k, trace_on, costs)};
+            }else if cfg!(feature = "jewel-8bit") && unit_k <= (Sse8x16x8::static_upper_bound() as u32 - 2) && max_k <= ((u8::MAX - 1) as u32) {
+                return unsafe {levenshtein_simd_core_sse_8x16x8(a, b, max_k, trace_on, costs)};
+            }else if cfg!(feature = "jewel-8bit") && unit_k <= (Sse16x16x8::static_upper_bound() as u32 - 2) && max_k <= ((u8::MAX - 1) as u32) {
+                return unsafe {levenshtein_simd_core_sse_16x16x8(a, b, max_k, trace_on, costs)};
+            }else if cfg!(feature = "jewel-16bit") && max_k <= ((u16::MAX - 1) as u32) {
+                return unsafe {levenshtein_simd_core_sse_nx8x16(a, b, max_k, trace_on, costs)};
             }else if cfg!(feature = "jewel-32bit") {
-                return unsafe {levenshtein_simd_core_sse_nx4x32(a, b, k, trace_on, costs)};
+                return unsafe {levenshtein_simd_core_sse_nx4x32(a, b, max_k, trace_on, costs)};
             }
         }
     }
@@ -769,26 +775,24 @@ create_levenshtein_simd_core!(levenshtein_simd_core_sse_16x16x8, traceback_sse_1
 create_levenshtein_simd_core!(levenshtein_simd_core_sse_nx8x16, traceback_sse_nx8x16, SseNx8x16, "sse4.1");
 create_levenshtein_simd_core!(levenshtein_simd_core_sse_nx4x32, traceback_sse_nx4x32, SseNx4x32, "sse4.1");
 
-pub fn levenshtein_exp(a: &[u8], b: &[u8], trace_on: bool) -> (u32, Option<Vec<Edit>>) {
+pub fn levenshtein(a: &[u8], b: &[u8]) -> u32 {
+    levenshtein_simd_k(a, b, u32::MAX).unwrap()
+}
+
+pub fn levenshtein_exp(a: &[u8], b: &[u8]) -> u32 {
     let mut k = 30;
-    let mut res = levenshtein_simd_k_with_opts(a, b, k, false, LEVENSHTEIN_COSTS);
+    let mut res = levenshtein_simd_k(a, b, k);
 
     while res.is_none() {
         k <<= 1;
-        res = levenshtein_simd_k_with_opts(a, b, k, false, LEVENSHTEIN_COSTS);
+        res = levenshtein_simd_k(a, b, k);
     }
 
-    if trace_on { // save memory by only calculating the traceback at the end, with an extra step
-        levenshtein_simd_k_with_opts(a, b, res.unwrap().0, true, LEVENSHTEIN_COSTS).unwrap()
-    }else{
-        res.unwrap()
-    }
+    res.unwrap()
 }
 
 pub fn levenshtein_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
-    let max_k = cmp::min((needle.len() as u32) * (LEVENSHTEIN_COSTS.mismatch_cost as u32),
-                              (needle.len() as u32) * (LEVENSHTEIN_COSTS.gap_cost as u32) * 2);
-    levenshtein_search_naive_with_opts(needle, haystack, max_k, SearchType::Best, LEVENSHTEIN_COSTS, false)
+    levenshtein_search_naive_with_opts(needle, haystack, u32::MAX, SearchType::Best, LEVENSHTEIN_COSTS, false)
 }
 
 pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {
@@ -802,8 +806,10 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
     costs.check_search();
 
     let len = needle_len + 1;
+    let max_k = cmp::min(k, cmp::min((needle_len as u32) * (LEVENSHTEIN_COSTS.mismatch_cost as u32),
+                                     (needle_len as u32) * (LEVENSHTEIN_COSTS.gap_cost as u32)));
     let iter_len = if anchored {
-        cmp::min(haystack_len, needle_len + (k as usize) / (costs.gap_cost as usize))
+        cmp::min(haystack_len, needle_len + (max_k as usize) / (costs.gap_cost as usize))
     }else{
         haystack_len
     };
@@ -815,7 +821,7 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
     let mut length1 = vec![0usize; len];
     let mut length2 = vec![0usize; len];
     let mut res = Vec::with_capacity(iter_len >> 2);
-    let mut curr_k = k;
+    let mut curr_k = max_k;
     let mismatch_cost = costs.mismatch_cost as u32;
     let gap_cost = costs.gap_cost as u32;
     let transpose_cost = match costs.transpose_cost {
@@ -895,9 +901,7 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
 }
 
 pub fn levenshtein_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
-    let max_k = cmp::min((needle.len() as u32) * (LEVENSHTEIN_COSTS.mismatch_cost as u32),
-                              (needle.len() as u32) * (LEVENSHTEIN_COSTS.gap_cost as u32) * 2);
-    levenshtein_search_simd_with_opts(needle, haystack, max_k, SearchType::Best, LEVENSHTEIN_COSTS, false)
+    levenshtein_search_simd_with_opts(needle, haystack, u32::MAX, SearchType::Best, LEVENSHTEIN_COSTS, false)
 }
 
 pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {
@@ -909,40 +913,42 @@ pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32,
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        let unit_k = k / (costs.gap_cost as u32);
+        let max_k = cmp::min(k, cmp::min((needle.len() as u32) * (LEVENSHTEIN_COSTS.mismatch_cost as u32),
+                                         (needle.len() as u32) * (LEVENSHTEIN_COSTS.gap_cost as u32)));
+        let unit_k = max_k / (costs.gap_cost as u32);
         // either the length of the match or the number of edits may exceed the maximum
         // available int size; additionally, MAX value is used to indicate overflow
-        let max_k = cmp::max(needle.len() as u32 + unit_k, k + 1);
+        let upper_bound = cmp::max(needle.len() as u32 + unit_k, max_k + 1);
 
         if cfg!(feature = "jewel-avx") && is_x86_feature_detected!("avx2") {
-            if cfg!(feature = "jewel-8bit") && needle.len() <= Avx1x32x8::static_upper_bound() && max_k <= u8::MAX as u32 {
-                return unsafe {levenshtein_search_simd_core_avx_1x32x8(needle, haystack, k, search_type, costs, anchored)};
-            }else if cfg!(feature = "jewel-8bit") && needle.len() <= Avx2x32x8::static_upper_bound() && max_k <= u8::MAX as u32 {
-                return unsafe {levenshtein_search_simd_core_avx_2x32x8(needle, haystack, k, search_type, costs, anchored)};
-            }else if cfg!(feature = "jewel-8bit") && needle.len() <= Avx4x32x8::static_upper_bound() && max_k <= u8::MAX as u32 {
-                return unsafe {levenshtein_search_simd_core_avx_4x32x8(needle, haystack, k, search_type, costs, anchored)};
-            }else if cfg!(feature = "jewel-8bit") && needle.len() <= Avx8x32x8::static_upper_bound() && max_k <= u8::MAX as u32 {
-                return unsafe {levenshtein_search_simd_core_avx_8x32x8(needle, haystack, k, search_type, costs, anchored)};
-            }else if cfg!(feature = "jewel-16bit") && max_k <= u16::MAX as u32 {
-                return unsafe {levenshtein_search_simd_core_avx_nx16x16(needle, haystack, k, search_type, costs, anchored)};
+            if cfg!(feature = "jewel-8bit") && needle.len() <= Avx1x32x8::static_upper_bound() && upper_bound <= u8::MAX as u32 {
+                return unsafe {levenshtein_search_simd_core_avx_1x32x8(needle, haystack, max_k, search_type, costs, anchored)};
+            }else if cfg!(feature = "jewel-8bit") && needle.len() <= Avx2x32x8::static_upper_bound() && upper_bound <= u8::MAX as u32 {
+                return unsafe {levenshtein_search_simd_core_avx_2x32x8(needle, haystack, max_k, search_type, costs, anchored)};
+            }else if cfg!(feature = "jewel-8bit") && needle.len() <= Avx4x32x8::static_upper_bound() && upper_bound <= u8::MAX as u32 {
+                return unsafe {levenshtein_search_simd_core_avx_4x32x8(needle, haystack, max_k, search_type, costs, anchored)};
+            }else if cfg!(feature = "jewel-8bit") && needle.len() <= Avx8x32x8::static_upper_bound() && upper_bound <= u8::MAX as u32 {
+                return unsafe {levenshtein_search_simd_core_avx_8x32x8(needle, haystack, max_k, search_type, costs, anchored)};
+            }else if cfg!(feature = "jewel-16bit") && upper_bound <= u16::MAX as u32 {
+                return unsafe {levenshtein_search_simd_core_avx_nx16x16(needle, haystack, max_k, search_type, costs, anchored)};
             }else if cfg!(feature = "jewel-32bit") {
-                return unsafe {levenshtein_search_simd_core_avx_nx8x32(needle, haystack, k, search_type, costs, anchored)};
+                return unsafe {levenshtein_search_simd_core_avx_nx8x32(needle, haystack, max_k, search_type, costs, anchored)};
             }
         }else if cfg!(feature = "jewel-sse") && is_x86_feature_detected!("sse4.1") {
-            if cfg!(feature = "jewel-8bit") && needle.len() <= Sse1x16x8::static_upper_bound() && max_k <= u8::MAX as u32 {
-                return unsafe {levenshtein_search_simd_core_sse_1x16x8(needle, haystack, k, search_type, costs, anchored)};
-            }else if cfg!(feature = "jewel-8bit") && needle.len() <= Sse2x16x8::static_upper_bound() && max_k <= u8::MAX as u32 {
-                return unsafe {levenshtein_search_simd_core_sse_2x16x8(needle, haystack, k, search_type, costs, anchored)};
-            }else if cfg!(feature = "jewel-8bit") && needle.len() <= Sse4x16x8::static_upper_bound() && max_k <= u8::MAX as u32 {
-                return unsafe {levenshtein_search_simd_core_sse_4x16x8(needle, haystack, k, search_type, costs, anchored)};
-            }else if cfg!(feature = "jewel-8bit") && needle.len() <= Sse8x16x8::static_upper_bound() && max_k <= u8::MAX as u32 {
-                return unsafe {levenshtein_search_simd_core_sse_8x16x8(needle, haystack, k, search_type, costs, anchored)};
-            }else if cfg!(feature = "jewel-8bit") && needle.len() <= Sse16x16x8::static_upper_bound() && max_k <= u8::MAX as u32 {
-                return unsafe {levenshtein_search_simd_core_sse_16x16x8(needle, haystack, k, search_type, costs, anchored)};
-            }else if cfg!(feature = "jewel-16bit") && max_k <= u16::MAX as u32 {
-                return unsafe {levenshtein_search_simd_core_sse_nx8x16(needle, haystack, k, search_type, costs, anchored)};
+            if cfg!(feature = "jewel-8bit") && needle.len() <= Sse1x16x8::static_upper_bound() && upper_bound <= u8::MAX as u32 {
+                return unsafe {levenshtein_search_simd_core_sse_1x16x8(needle, haystack, max_k, search_type, costs, anchored)};
+            }else if cfg!(feature = "jewel-8bit") && needle.len() <= Sse2x16x8::static_upper_bound() && upper_bound <= u8::MAX as u32 {
+                return unsafe {levenshtein_search_simd_core_sse_2x16x8(needle, haystack, max_k, search_type, costs, anchored)};
+            }else if cfg!(feature = "jewel-8bit") && needle.len() <= Sse4x16x8::static_upper_bound() && upper_bound <= u8::MAX as u32 {
+                return unsafe {levenshtein_search_simd_core_sse_4x16x8(needle, haystack, max_k, search_type, costs, anchored)};
+            }else if cfg!(feature = "jewel-8bit") && needle.len() <= Sse8x16x8::static_upper_bound() && upper_bound <= u8::MAX as u32 {
+                return unsafe {levenshtein_search_simd_core_sse_8x16x8(needle, haystack, max_k, search_type, costs, anchored)};
+            }else if cfg!(feature = "jewel-8bit") && needle.len() <= Sse16x16x8::static_upper_bound() && upper_bound <= u8::MAX as u32 {
+                return unsafe {levenshtein_search_simd_core_sse_16x16x8(needle, haystack, max_k, search_type, costs, anchored)};
+            }else if cfg!(feature = "jewel-16bit") && upper_bound <= u16::MAX as u32 {
+                return unsafe {levenshtein_search_simd_core_sse_nx8x16(needle, haystack, max_k, search_type, costs, anchored)};
             }else if cfg!(feature = "jewel-32bit") {
-                return unsafe {levenshtein_search_simd_core_sse_nx4x32(needle, haystack, k, search_type, costs, anchored)};
+                return unsafe {levenshtein_search_simd_core_sse_nx4x32(needle, haystack, max_k, search_type, costs, anchored)};
             }
         }
     }
@@ -1145,4 +1151,8 @@ create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_8x16x8, Ss
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_16x16x8, Sse16x16x8, "sse4.1");
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_nx8x16, SseNx8x16, "sse4.1");
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_nx4x32, SseNx4x32, "sse4.1");
+
+pub fn levenshtein_search(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
+    levenshtein_search_simd(needle, haystack)
+}
 
