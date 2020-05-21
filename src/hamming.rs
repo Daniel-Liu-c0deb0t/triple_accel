@@ -34,7 +34,8 @@ pub fn hamming_naive(a: &[u8], b: &[u8]) -> u32 {
     res
 }
 
-/// Returns a vector of best `Match`s by naively searching through the text `haystack` for the pattern `needle`.
+/// Returns a vector of best `Match`s by naively searching through the text `haystack`
+/// for the pattern `needle`.
 ///
 /// This is done by naively counting mismatches at every position in `haystack`.
 /// Only the matches with the lowest Hamming distance are returned.
@@ -57,7 +58,8 @@ pub fn hamming_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     hamming_search_naive_with_opts(needle, haystack, needle.len() as u32, SearchType::Best)
 }
 
-/// Returns a vector of `Match`s by naively searching through the text `haystack` for the pattern `needle`.
+/// Returns a vector of `Match`s by naively searching through the text `haystack`
+/// for the pattern `needle`, with extra options.
 ///
 /// Only matches with less than `k` mismatches are returned.
 /// This is done by naively counting mismatches at every position in `haystack`.
@@ -266,10 +268,12 @@ pub fn hamming_words_128(a: &[u8], b: &[u8]) -> u32 {
     }
 }
 
-/// Returns the hamming distance between two strings by counting mismatches in chunks of 256 bits, by using AVX2 to increment multiple counters in parallel.
+/// Returns the hamming distance between two strings by counting mismatches using SIMD vectors to
+/// increment multiple counters in parallel.
 ///
 /// The length of `a` and `b` must be the same.
 /// There are no constraints on how `a` and `b` are aligned and padded.
+/// This will automatically fall back to `hamming_naive`, if AVX2 and SSE4.1 are not supported.
 /// This should be faster than both `hamming_word_64/128` and `hamming_simd_movemask`.
 ///
 /// # Arguments
@@ -303,10 +307,11 @@ pub fn hamming_simd_parallel(a: &[u8], b: &[u8]) -> u32 {
     hamming_naive(a, b)
 }
 
-/// Returns the hamming distance between two strings by counting mismatches in chunks of 256 bits, by using AVX2's movemask instruction.
+/// Returns the hamming distance between two strings by counting mismatches using the SIMD movemask intrinsic.
 ///
 /// The length of `a` and `b` must be the same.
 /// There are no constraints on how `a` and `b` are aligned and padded.
+/// This will automatically fall back to `hamming_naive`, if AVX2 and SSE4.1 are not supported.
 /// This should be faster than `hamming_word_64/128`, but slower than `hamming_simd_parallel`.
 ///
 /// # Arguments
@@ -340,24 +345,46 @@ pub fn hamming_simd_movemask(a: &[u8], b: &[u8]) -> u32 {
     hamming_naive(a, b)
 }
 
+/// Returns the hamming distance between two strings using the best method.
+///
+/// The length of `a` and `b` must be the same.
+/// This will automatically fall back to a scalar alternative if AVX2 and
+/// SSE4.1 are not supported.
+/// Internally, this calls `hamming_simd_parallel`.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+///
+/// # Panics
+/// * If the length of `a` does not equal the length of `b`.
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let dist = hamming(b"abc", b"abd");
+///
+/// assert!(dist == 1);
+/// ```
 pub fn hamming(a: &[u8], b: &[u8]) -> u32 {
     hamming_simd_parallel(a, b)
 }
 
-/// Returns a vector of best `Match`s by searching through the text `haystack` for the pattern `needle` using AVX2.
+/// Returns a vector of best `Match`s by searching through the text `haystack`
+/// for the pattern `needle` using SIMD.
 ///
-/// This is done by using AVX2 to count mismatches at every position in `haystack`.
-/// The length of `needle` must be less than or equal to the length of `haystack`. Additionally,
-/// the length of needle must be less than or equal to 32.
+/// This is done by counting mismatches at every position in `haystack`.
+/// This will automatically fall back to `hamming_search_naive_with_opts` if AVX2 and SSE4.1
+/// are not supported.
+/// Null bytes/characters are not supported.
+/// The length of `needle` must be less than or equal to the length of `haystack`.
 /// Only the matches with the lowest Hamming distance are returned.
 /// This should be faster than `hamming_search_naive`.
 ///
 /// # Arguments
 /// * `needle` - pattern string (slice)
 /// * `haystack` - text string (slice)
-///
-/// # Panics
-/// * If needle length is greater than 32.
 ///
 /// # Example
 /// ```
@@ -372,12 +399,15 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     hamming_search_simd_with_opts(needle, haystack, needle.len() as u32, SearchType::Best)
 }
 
-/// Returns a vector of `Match`s by searching through the text `haystack` for the pattern `needle` using AVX2.
+/// Returns a vector of `Match`s by searching through the text `haystack` for the
+/// pattern `needle` using SIMD, with extra options.
 ///
-/// This is done by using AVX2 to count mismatches at every position in `haystack`.
-/// The length of `needle` must be less than or equal to the length of `haystack`. Additionally,
-/// the length of needle must be less than or equal to 32.
-/// This should be faster than `hamming_search_naive_k`.
+/// This is done by using SIMD to count mismatches at every position in `haystack`.
+/// This will automatically fall back to `hamming_search_naive_with_opts` if AVX2 and SSE4.1
+/// are not supported.
+/// Null bytes/characters are not supported.
+/// The length of `needle` must be less than or equal to the length of `haystack`.
+/// This should be faster than `hamming_search_naive_with_opts`.
 ///
 /// # Arguments
 /// * `needle` - pattern string (slice)
@@ -385,9 +415,6 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// * `k` - number of mismatches allowed
 /// * `search_type` - whether to only return the "best" matches with the lowest Hamming distance or
 /// the first match that is encountered
-///
-/// # Panics
-/// * If needle length is greater than 32.
 ///
 /// # Example
 /// ```
@@ -484,6 +511,28 @@ macro_rules! create_hamming_search_simd_core {
 create_hamming_search_simd_core!(hamming_search_simd_core_avx, Avx, "avx2");
 create_hamming_search_simd_core!(hamming_search_simd_core_sse, Sse, "sse4.1");
 
+/// Returns a vector of best `Match`s by searching through the text `haystack`
+/// for the pattern `needle` using SIMD.
+///
+/// This will automatically fall back to a scalar alternative if AVX2 and SSE4.1
+/// are not supported.
+/// Null bytes/characters are not supported.
+/// The length of `needle` must be less than or equal to the length of `haystack`.
+/// Only the matches with the lowest Hamming distance are returned.
+/// Internally, this calls `hamming_search_simd`.
+///
+/// # Arguments
+/// * `needle` - pattern string (slice)
+/// * `haystack` - text string (slice)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let matches = hamming_search(b"abc", b"  abd");
+///
+/// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
+/// ```
 pub fn hamming_search(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     hamming_search_simd(needle, haystack)
 }

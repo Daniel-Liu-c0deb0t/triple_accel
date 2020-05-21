@@ -9,23 +9,26 @@ use std::arch::x86_64::*;
 /// Jewel provides a uniform interface for SIMD operations.
 ///
 /// To save space, most operations are modify in place.
+/// Jewel vectors can be easily printed for debugging purposes.
+/// Additionally, the functions should be inlined to the caller for
+/// maximum efficiency.
 pub trait Jewel: fmt::Display {
-    /// Functions for creating a Jewel vector.
+    /// Functions for allocating memory and creating a new Jewel vector.
     unsafe fn repeating(val: u32, len: usize) -> Self;
     unsafe fn repeating_max(len: usize) -> Self;
 
     /// Figure out the length of the created vector, which may
-    /// be higher than the length given by the caller.
+    /// be longer than the length given by the caller.
     fn upper_bound(&self) -> usize;
     /// Figure out the length if it is static.
     fn static_upper_bound() -> usize;
 
-    /// These operations are modify in place, so less memory allocations are needed
-    /// on long sequences of operations.
+    /// These operations do not have to be very efficient.
     unsafe fn slow_loadu(&mut self, idx: usize, ptr: *const u8, len: usize, reverse: bool);
-
     unsafe fn slow_extract(&self, i: usize) -> u32;
     unsafe fn slow_insert(&mut self, i: usize, val: u32);
+
+    /// These operations modify the Jewel struct where the function is called.
     /// last_0 is the last element, last_1 is the second to last, etc.
     unsafe fn insert_last_0(&mut self, val: u32);
     unsafe fn insert_last_1(&mut self, val: u32);
@@ -46,7 +49,7 @@ pub trait Jewel: fmt::Display {
     unsafe fn shift_left_2_mut(&mut self);
     unsafe fn shift_right_1_mut(&mut self);
 
-    /// Overwrite a res vector to reduce memory allocations
+    /// These operations overwrite a res vector to reduce memory allocations.
     unsafe fn add(a: &Self, b: &Self, res: &mut Self);
     unsafe fn adds(a: &Self, b: &Self, res: &mut Self);
     unsafe fn andnot(a: &Self, b: &Self, res: &mut Self);
@@ -56,11 +59,13 @@ pub trait Jewel: fmt::Display {
     unsafe fn shift_left_1(a: &Self, res: &mut Self);
     unsafe fn shift_right_1(a: &Self, res: &mut Self);
 
+    /// `triple_argmin` will allocate memory and create a new Jewel vector.
+    unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self;
     unsafe fn triple_min_length(sub: &Self, a_gap: &Self, b_gap: &Self, sub_length: &Self,
                                 a_gap_length: &Self, b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self);
-    unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self;
 }
 
+// macros to help generate implementations for some of the Jewel vector functions
 macro_rules! operation_param2 {
     ($target:literal, $fn_name:ident, $intrinsic:ident) => {
         #[target_feature(enable = $target)]
@@ -85,7 +90,7 @@ macro_rules! operation_mut_param2 {
     };
 }
 
-/// N x 32 x 8 vector backed with 256-bit AVX vectors
+/// N x 32 x 8 vector backed with 256-bit AVX vectors.
 macro_rules! create_avx_nx32x8 {
     ($name:ident, $num:literal) => {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -142,6 +147,7 @@ macro_rules! create_avx_nx32x8 {
                     let arr_idx = curr_idx & 31;
 
                     if arr_idx == store_idx || i == 0 {
+                        // use part of the original array
                         _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(curr_idx >> 5));
                     }
 
@@ -325,7 +331,6 @@ macro_rules! create_avx_nx32x8 {
             #[inline]
             unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self {
                 // return the edit used in addition to doing a min operation
-                // hide latency by minimizing dependencies
                 let mut v = [_mm256_undefined_si256(); $num];
                 let twos = _mm256_set1_epi8(2);
 
@@ -357,7 +362,6 @@ macro_rules! create_avx_nx32x8 {
                                         b_gap: &Self, sub_length: &Self, a_gap_length: &Self,
                                         b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self) {
                 // choose the length based on which edit is chosen during the min operation
-                // hide latency by minimizing dependencies
                 // secondary objective of maximizing length if edit costs equal
                 for i in 0..sub.v.len() {
                     let sub = *sub.v.get_unchecked(i);
@@ -427,11 +431,13 @@ macro_rules! create_avx_nx32x8 {
     };
 }
 
+// constant array size, so the compiler should unroll the loops
 create_avx_nx32x8!(Avx1x32x8, 1);
 create_avx_nx32x8!(Avx2x32x8, 2);
 create_avx_nx32x8!(Avx4x32x8, 4);
 create_avx_nx32x8!(Avx8x32x8, 8);
 
+/// N x 16 x 16 vector backed with 256-bit AVX vectors.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub struct AvxNx16x16 {
     v: Vec<__m256i>
@@ -669,7 +675,6 @@ impl Jewel for AvxNx16x16 {
     #[inline]
     unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self {
         // return the edit used in addition to doing a min operation
-        // hide latency by minimizing dependencies
         let mut v = Vec::with_capacity(sub.v.len());
         let twos = _mm256_set1_epi16(2);
 
@@ -701,7 +706,6 @@ impl Jewel for AvxNx16x16 {
                                 b_gap: &Self, sub_length: &Self, a_gap_length: &Self,
                                 b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self) {
         // choose the length based on which edit is chosen during the min operation
-        // hide latency by minimizing dependencies
         // secondary objective of maximizing length if edit costs equal
         for i in 0..sub.v.len() {
             let sub = *sub.v.get_unchecked(i);
@@ -769,6 +773,7 @@ impl fmt::Display for AvxNx16x16 {
     }
 }
 
+/// N x 8 x 32 vector backed with 256-bit AVX vectors.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub struct AvxNx8x32 {
     v: Vec<__m256i>
@@ -1019,7 +1024,6 @@ impl Jewel for AvxNx8x32 {
     #[inline]
     unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self {
         // return the edit used in addition to doing a min operation
-        // hide latency by minimizing dependencies
         let mut v = Vec::with_capacity(sub.v.len());
         let twos = _mm256_set1_epi32(2);
 
@@ -1051,7 +1055,6 @@ impl Jewel for AvxNx8x32 {
                                 b_gap: &Self, sub_length: &Self, a_gap_length: &Self,
                                 b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self) {
         // choose the length based on which edit is chosen during the min operation
-        // hide latency by minimizing dependencies
         // secondary objective of maximizing length if edit costs equal
         for i in 0..sub.v.len() {
             let sub = *sub.v.get_unchecked(i);
@@ -1119,7 +1122,7 @@ impl fmt::Display for AvxNx8x32 {
     }
 }
 
-/// N x 16 x 8 vector backed with 128-bit SSE vectors
+/// N x 16 x 8 vector backed with 128-bit SSE vectors.
 macro_rules! create_sse_nx16x8 {
     ($name:ident, $num:literal) => {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -1334,7 +1337,6 @@ macro_rules! create_sse_nx16x8 {
             #[inline]
             unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self {
                 // return the edit used in addition to doing a min operation
-                // hide latency by minimizing dependencies
                 let mut v = [_mm_undefined_si128(); $num];
                 let twos = _mm_set1_epi8(2);
 
@@ -1366,7 +1368,6 @@ macro_rules! create_sse_nx16x8 {
                                         b_gap: &Self, sub_length: &Self, a_gap_length: &Self,
                                         b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self) {
                 // choose the length based on which edit is chosen during the min operation
-                // hide latency by minimizing dependencies
                 // secondary objective of maximizing length if edit costs equal
                 for i in 0..sub.v.len() {
                     let sub = *sub.v.get_unchecked(i);
@@ -1436,12 +1437,14 @@ macro_rules! create_sse_nx16x8 {
     };
 }
 
+// constant array size, so the compiler should unroll the loops
 create_sse_nx16x8!(Sse1x16x8, 1);
 create_sse_nx16x8!(Sse2x16x8, 2);
 create_sse_nx16x8!(Sse4x16x8, 4);
 create_sse_nx16x8!(Sse8x16x8, 8);
 create_sse_nx16x8!(Sse16x16x8, 16);
 
+/// N x 8 x 16 vector backed with 128-bit SSE vectors.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub struct SseNx8x16 {
     v: Vec<__m128i>
@@ -1654,7 +1657,6 @@ impl Jewel for SseNx8x16 {
     #[inline]
     unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self {
         // return the edit used in addition to doing a min operation
-        // hide latency by minimizing dependencies
         let mut v = Vec::with_capacity(sub.v.len());
         let twos = _mm_set1_epi16(2);
 
@@ -1686,7 +1688,6 @@ impl Jewel for SseNx8x16 {
                                 b_gap: &Self, sub_length: &Self, a_gap_length: &Self,
                                 b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self) {
         // choose the length based on which edit is chosen during the min operation
-        // hide latency by minimizing dependencies
         // secondary objective of maximizing length if edit costs equal
         for i in 0..sub.v.len() {
             let sub = *sub.v.get_unchecked(i);
@@ -1754,6 +1755,7 @@ impl fmt::Display for SseNx8x16 {
     }
 }
 
+/// N x 4 x 32 vector backed with 128-bit SSE vectors.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub struct SseNx4x32 {
     v: Vec<__m128i>
@@ -1979,7 +1981,6 @@ impl Jewel for SseNx4x32 {
     #[inline]
     unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self {
         // return the edit used in addition to doing a min operation
-        // hide latency by minimizing dependencies
         let mut v = Vec::with_capacity(sub.v.len());
         let twos = _mm_set1_epi32(2);
 
@@ -2011,7 +2012,6 @@ impl Jewel for SseNx4x32 {
                                 b_gap: &Self, sub_length: &Self, a_gap_length: &Self,
                                 b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self) {
         // choose the length based on which edit is chosen during the min operation
-        // hide latency by minimizing dependencies
         // secondary objective of maximizing length if edit costs equal
         for i in 0..sub.v.len() {
             let sub = *sub.v.get_unchecked(i);

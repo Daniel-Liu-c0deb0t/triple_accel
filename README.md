@@ -1,10 +1,10 @@
-# triple accel
+# triple_accel
 ![Build and Test](https://github.com/Daniel-Liu-c0deb0t/triple_accel/workflows/Build%20and%20Test/badge.svg)
 
-Rust edit distance routines accelerated with SIMD.
+Rust edit distance routines accelerated using SIMD, with support for Hamming, Levenshtein, etc. distances.
 
 ## Example
-`triple accel` provides a very simple and easy to use framework for common edit distance operations. Calculating the Hamming distance (number of mismatches) between two strings is extremely simple:
+`triple_accel` provides a very simple and easy to use framework for common edit distance operations. Calculating the Hamming distance (number of mismatches) between two strings is extremely simple:
 ```Rust
 use triple_accel::*;
 
@@ -57,5 +57,5 @@ Don't let the name of the function fool you! `levenshtein_simd_k_with_opts` will
 ## Features
 
 
-## Why the name "triple accel"?
+## Why the name "triple_accel"?
 Because "Time Altar - Triple Accel" is a magical ability used by Kiritsugu Emiya to boost his speed and reaction time in Fate/Zero.

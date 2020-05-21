@@ -1,25 +1,58 @@
-//! # triple accel
-//! Hamming and Levenshtein distance routines that are accelerated using SIMD.
+//! # triple_accel
 //!
-//! This library provides routines for both searching for needle string in some haystack string
-//! and calculating the distance between two strings, along with other utility functions.
+//! Rust edit distance routines accelerated using SIMD, with support for Hamming, Levenshtein, etc.
+//! distances.
 //!
-//! The goal is an easy-to-use abstraction over SIMD edit distance routines, that
-//! falls back to non-SIMD routines if the target architecture is not supported.
+//! Although vectorized SIMD code allows for up to 20-30x speedups over their scalar counterparts,
+//! the difficulty of handling platform-dependent SIMD code makes SIMD routines less attractive.
+//! The goal of this library is to provide an easy-to-use abstraction over SIMD edit distance routines
+//! that fall back to scalar routines if the target CPU architecture is not supported.
 //! Additionally, all limitations and tradeoffs of edit distance routines should be provided upfront
 //! so the user knows exactly what to expect.
 //!
-//! This library supports strings that are represented with `u8` characters. Unicode is not
-//! currently supported.
+//! ## Features
 //!
-//! Currently, this library supports the AVX2 instruction set for both x86 and x86-64 machines.
-//! This offers 256-bit vectors that allow 32 bytes to be processed together.
+//! This library provides routines for both searching for some needle string in a haystack string
+//! and calculating the edit distance between two strings. Hamming distance (mismatches only),
+//! Levenshtein distance (mismatches + gaps), and restricted Damerau-Levenshtein distance
+//! (transpositions + mismatches + gaps) are supported, along with arbitrary edit costs. This
+//! library provides a simple interface, in addition to powerful lower-level control over the edit
+//! distance calculations.
 //!
-//! Quick notation notes that will often appear:
+//! At runtime, the implementation for a certain algorithm is selected based on CPU support, going
+//! down the list:
+//!
+//! 1. Vectorized implementation with 256-bit AVX vectors, if AVX2 is supported.
+//! 2. Vectorized implementation with 128-bit SSE vectors, if SSE4.1 is supported.
+//! 3. Scalar implementation.
+//!
+//! Currently, vectorized SIMD implementations are only available for x86 or x86-64 CPUs. However,
+//! after compiling this library on a machine that supports those SIMD intrinsics, the library can
+//! be used on other machines.
+//! Additionally, the internal data structure for storing vectors and the bit width of the values
+//! in the vectors are selected at runtime for maximum efficiency and accuracy, given the lengths
+//! of the input strings.
+//!
+//! ## Limitations
+//!
+//! Due to the use of SIMD intrinsics, there are a few limitations that are important to note:
+//!
+//! * Only binary strings that are represented with `u8` bytes are supported. Unicode strings are
+//! not currently supported.
+//! * `u8` bytes with the value of zero (null bytes) are not supported. This is because the vectors
+//! uses zeros as padding.
+//!
+//! ## Notation
+//!
+//! Quick notation notes that will often appear in the code/documentation:
+//!
 //! * `k` - the number of edits that are allowed
-//! * `a` and `b` - any two strings; this is usually used for matching routines
+//! * `a` and `b` - any two strings; this is usually used for edit distance routines
 //! * `needle` and `haystack` - any two strings; we want to search for where needle appears in
 //! haystack
+//!
+//! ## Examples
+//!
 
 use std::*;
 
@@ -29,7 +62,7 @@ pub mod levenshtein;
 
 // re-export common functions
 pub use hamming::{hamming, hamming_search};
-pub use levenshtein::{levenshtein, levenshtein_search};
+pub use levenshtein::{levenshtein, rdamerau, levenshtein_exp, levenshtein_search};
 
 // some shared utility stuff below
 
@@ -48,7 +81,7 @@ pub struct Match {
 
 /// An enum describing possible edit operations.
 ///
-/// This is usually returned as part of the traceback for matching routines.
+/// This is usually returned as part of the traceback for edit distance routines.
 #[derive(Debug, PartialEq)]
 pub enum EditType {
     Match,
@@ -60,14 +93,15 @@ pub enum EditType {
 
 /// A struct representing a sequence of edits of the same type.
 ///
-/// This is returned in the run-length encoded traceback of matching routines.
+/// This is returned in the run-length encoded traceback of edit distance routines.
 #[derive(Debug, PartialEq)]
 pub struct Edit {
     pub edit: EditType,
     pub count: usize
 }
 
-/// An enum representing whether to return the best or the first match when searching.
+/// An enum representing whether to return all matches, the best matches, or the
+/// first match when searching.
 ///
 /// This is used as an argument for searching routines.
 #[derive(Debug, PartialEq)]
@@ -77,12 +111,15 @@ pub enum SearchType {
     First
 }
 
-/// This creates a vector with the alignment and padding for `u128` values, and then convert it to a vector of `u8` values that is returned.
+/// This creates a vector with the alignment and padding for `u128` values, and
+/// then convert it to a vector of `u8` values that is returned.
 ///
 /// This is possible because u8 has looser alignment requirements than `u128`.
-/// This vector can be easily converted back to `u128` or `u64` later, for Hamming distance routines.
+/// This vector can be easily converted back to `u128` or `u64` later, for Hamming
+/// distance routines.
 /// The returned vector can be edited by copying `u8` values into it.
-/// However, do not do any operation (like `push`) that may cause the the vector to be reallocated.
+/// However, do not do any operation (like `push`) that may cause the the vector to be
+/// reallocated.
 ///
 /// # Arguments
 /// * `len` - the length of the resulting array of u8 values

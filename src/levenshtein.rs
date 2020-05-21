@@ -2,6 +2,9 @@ use std::*;
 use super::*;
 use super::jewel::*;
 
+/// A struct holding the edit costs for mismatches, gaps, and possibly transpositions.
+///
+/// This should be used as a parameter for Levenshtein distance or search routines.
 #[derive(Copy, Clone, Debug)]
 pub struct EditCosts {
     mismatch_cost: u8,
@@ -10,6 +13,13 @@ pub struct EditCosts {
 }
 
 impl EditCosts {
+    /// Create a new EditCosts struct, checking for whether the specified costs are valid.
+    ///
+    /// # Arguments
+    /// * `mismatch_cost` - cost of a mismatch edit, which must be positive
+    /// * `gap_cost` - cost of a gap, which must be positive
+    /// * `transpose_cost` - cost of a transpose, which must be cheaper than doing the equivalent
+    /// operation with mismatches and gaps
     pub fn new(mismatch_cost: u8, gap_cost: u8, transpose_cost: Option<u8>) -> Self {
         assert!(mismatch_cost > 0);
         assert!(gap_cost > 0);
@@ -28,6 +38,8 @@ impl EditCosts {
         }
     }
 
+    /// For Levenshtein searches, the cost of transpositions must be less than or equal to cost of
+    /// gaps.
     fn check_search(&self) {
         if let Some(cost) = self.transpose_cost {
             assert!(cost <= self.gap_cost);
@@ -35,9 +47,28 @@ impl EditCosts {
     }
 }
 
+/// Costs for Levenshtein distance, where mismatches and gaps both have a cost of 1, and
+/// transpositions are not allowed.
 pub const LEVENSHTEIN_COSTS: EditCosts = EditCosts{mismatch_cost: 1, gap_cost: 1, transpose_cost: None};
+/// Costs for restricted Damerau-Levenshtein distance, where mismatches, gaps, and transpositions
+/// all have a cost of 1.
 pub const RDAMERAU_COSTS: EditCosts = EditCosts{mismatch_cost: 1, gap_cost: 1, transpose_cost: Some(1)};
 
+/// Returns the Levenshtein distance between two strings using the naive scalar algorithm.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+/// # use triple_accel::levenshtein::*;
+///
+/// let dist = levenshtein_naive(b"abc", b"ab");
+///
+/// assert!(dist == 1);
+/// ```
 pub fn levenshtein_naive(a: &[u8], b: &[u8]) -> u32 {
     levenshtein_naive_with_opts(a, b, false, LEVENSHTEIN_COSTS).0
 }
@@ -777,6 +808,10 @@ create_levenshtein_simd_core!(levenshtein_simd_core_sse_nx4x32, traceback_sse_nx
 
 pub fn levenshtein(a: &[u8], b: &[u8]) -> u32 {
     levenshtein_simd_k(a, b, u32::MAX).unwrap()
+}
+
+pub fn rdamerau(a: &[u8], b: &[u8]) -> u32 {
+    levenshtein_simd_k_with_opts(a, b, u32::MAX, false, RDAMERAU_COSTS).unwrap().0
 }
 
 pub fn levenshtein_exp(a: &[u8], b: &[u8]) -> u32 {
