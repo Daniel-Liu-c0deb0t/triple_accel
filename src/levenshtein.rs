@@ -925,6 +925,8 @@ create_levenshtein_simd_core!(levenshtein_simd_core_sse_nx4x32, traceback_sse_nx
 
 /// Returns the Levenshtein distance between two strings using SIMD acceleration.
 ///
+/// Note that `levenshtein_exp` may be much faster if the number of edits between the two strings
+/// is expected to be small.
 /// Currently, this does not support null bytes/characters in the strings.
 /// Internally, this will call `levenshtein_simd_k`.
 /// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to a scalar alternative.
@@ -968,8 +970,8 @@ pub fn rdamerau(a: &[u8], b: &[u8]) -> u32 {
 /// Returns the Levenshtein distance between two strings using exponential search and SIMD
 /// acceleration.
 ///
-/// This may be more efficient than `levenshtein` if the number of edits between `a` and `b` is
-/// small.
+/// This may be much more efficient than `levenshtein` if the number of edits between `a` and `b`
+/// is expected to be small.
 /// Currently, this does not support null bytes/characters in the strings.
 /// Internally, this will call `levenshtein_simd_k` with values of `k` determined through
 /// exponential search.

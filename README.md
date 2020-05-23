@@ -27,7 +27,7 @@ Similarly, we can easily calculate the Levenshtein distance (character mismatche
 let a = b"abc";
 let b = b"abcd";
 
-let dist = levenshtein(&a, &b);
+let dist = levenshtein_exp(&a, &b);
 assert!(dist == 1);
 ```
 In addition to edit distance routines, `triple_accel` also provides search routines. These routines return a vector of matches that indicate where the `needle` string matches the `haystack` string. `triple_accel` will attempt to maximize the length of matches that end at the same position.
