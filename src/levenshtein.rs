@@ -13,7 +13,7 @@ pub struct EditCosts {
 }
 
 impl EditCosts {
-    /// Create a new EditCosts struct, checking for whether the specified costs are valid.
+    /// Create a new `EditCosts` struct, checking for whether the specified costs are valid.
     ///
     /// # Arguments
     /// * `mismatch_cost` - cost of a mismatch edit, which must be positive
@@ -73,6 +73,25 @@ pub fn levenshtein_naive(a: &[u8], b: &[u8]) -> u32 {
     levenshtein_naive_with_opts(a, b, false, LEVENSHTEIN_COSTS).0
 }
 
+/// Returns the Levenshtein distance between two strings and optionally, the edit traceback,
+/// using the naive scalar algorithm, with extra options.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+/// * `trace_on` - whether to return the traceback, the sequence of edits between `a` and `b`
+/// * `costs` - `EditCosts` struct for the cost of each edit operation
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+/// # use triple_accel::levenshtein::*;
+///
+/// let dist = levenshtein_naive_with_opts(b"abc", b"ab", true, LEVENSHTEIN_COSTS);
+///
+/// assert!(dist == (1, Some(vec![Edit{edit: EditType::Match, count: 2},
+///                               Edit{edit: EditType::BGap, count: 1}])));
+/// ```
 pub fn levenshtein_naive_with_opts(a: &[u8], b: &[u8], trace_on: bool, costs: EditCosts) -> (u32, Option<Vec<Edit>>) {
     let swap = a.len() > b.len(); // swap so that a len <= b len
     let a_new = if swap {b} else {a};
@@ -204,6 +223,28 @@ pub fn levenshtein_naive_with_opts(a: &[u8], b: &[u8], trace_on: bool, costs: Ed
     }
 }
 
+/// Returns the Levenshtein distance, bounded by a cost threshold `k`, between two strings, using the
+/// naive scalar algorithm.
+///
+/// This will return `None` if the Levenshtein distance between `a` and `b` is greater than the
+/// threshold `k`.
+/// This should be much faster than `levenshtein_naive` if `k` is small compared to the lengths of
+/// `a` and `b`.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+/// * `k` - maximum number of edits allowed between `a` and `b`
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+/// # use triple_accel::levenshtein::*;
+///
+/// let dist = levenshtein_naive_k(b"abc", b"ab", 1);
+///
+/// assert!(dist.unwrap() == 1);
+/// ```
 pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32) -> Option<u32> {
     let res = levenshtein_naive_k_with_opts(a, b, k, false, LEVENSHTEIN_COSTS);
 
@@ -213,6 +254,31 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32) -> Option<u32> {
     }
 }
 
+/// Returns the Levenshtein distance, bounded by a cost threshold `k`, between two strings and optionally,
+/// the edit traceback, using the naive scalar algorithm, with extra options.
+///
+/// This will return `None` if the Levenshtein distance between `a` and `b` is greater than the
+/// threshold `k`.
+/// This should be much faster than `levenshtein_naive_with_opts` if `k` is small compared to the lengths of
+/// `a` and `b`.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+/// * `k` - maximum number of cost allowed between `a` and `b`
+/// * `trace_on` - whether to return the traceback, the sequence of edits between `a` and `b`
+/// * `costs` - `EditCosts` struct for the cost of each edit operation
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+/// # use triple_accel::levenshtein::*;
+///
+/// let dist = levenshtein_naive_k_with_opts(b"abc", b"ab", 1, true, LEVENSHTEIN_COSTS);
+///
+/// assert!(dist.unwrap() == (1, Some(vec![Edit{edit: EditType::Match, count: 2},
+///                                        Edit{edit: EditType::BGap, count: 1}])));
+/// ```
 pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool, costs: EditCosts) -> Option<(u32, Option<Vec<Edit>>)> {
     let swap = a.len() > b.len(); // swap so that a len <= b len
     let a_new = if swap {b} else {a};
@@ -372,6 +438,32 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
     Some((dp1[hi - lo - 1], Some(res)))
 }
 
+/// Returns the Levenshtein distance, bounded by a cost threshold `k`, between two strings, using
+/// SIMD acceleration.
+///
+/// This will return `None` if the Levenshtein distance between `a` and `b` is greater than the
+/// threshold `k`.
+/// This should be much faster than `levenshtein_naive` and `levenshtein_naive_k`.
+/// Currently, this does not support null bytes/characters in the strings.
+/// Internally, this will automatically use AVX or SSE vectors with 8-bit, 16-bit, or 32-bit elements
+/// to represent anti-diagonals in the dynamic programming matrix for calculating Levenshtein distance.
+/// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to
+/// `levenshtein_naive_k_with_opts`.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+/// * `k` - maximum number of edits allowed between `a` and `b`
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+/// # use triple_accel::levenshtein::*;
+///
+/// let dist = levenshtein_simd_k(b"abc", b"ab", 1);
+///
+/// assert!(dist.unwrap() == 1);
+/// ```
 pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32) -> Option<u32> {
     let res = levenshtein_simd_k_with_opts(a, b, k, false, LEVENSHTEIN_COSTS);
 
@@ -381,6 +473,36 @@ pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32) -> Option<u32> {
     }
 }
 
+/// Returns the Levenshtein distance, bounded by a cost threshold `k`, between two strings and optionally,
+/// the edit traceback, using SIMD acceleration, with extra options.
+///
+/// This will return `None` if the Levenshtein distance between `a` and `b` is greater than the
+/// threshold `k`.
+/// This should be much faster than `levenshtein_naive_with_opts` and
+/// `levenshtein_naive_k_with_opts`.
+/// Currently, this does not support null bytes/characters in the strings.
+/// Internally, this will automatically use AVX or SSE vectors with 8-bit, 16-bit, or 32-bit elements
+/// to represent anti-diagonals in the dynamic programming matrix for calculating Levenshtein distance.
+/// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to
+/// `levenshtein_naive_k_with_opts`.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+/// * `k` - maximum number of cost allowed between `a` and `b`
+/// * `trace_on` - whether to return the traceback, the sequence of edits between `a` and `b`
+/// * `costs` - `EditCosts` struct for the cost of each edit operation
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+/// # use triple_accel::levenshtein::*;
+///
+/// let dist = levenshtein_simd_k_with_opts(b"abc", b"ab", 1, true, LEVENSHTEIN_COSTS);
+///
+/// assert!(dist.unwrap() == (1, Some(vec![Edit{edit: EditType::Match, count: 2},
+///                                        Edit{edit: EditType::BGap, count: 1}])));
+/// ```
 pub fn levenshtein_simd_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool, costs: EditCosts) -> Option<(u32, Option<Vec<Edit>>)> {
     if a.len() == 0 && b.len() == 0 {
         return if trace_on {Some((0u32, Some(vec![])))} else {Some((0u32, None))};
@@ -791,6 +913,7 @@ macro_rules! create_levenshtein_simd_core {
     };
 }
 
+// create a version of the functions for each Jewel vector
 create_levenshtein_simd_core!(levenshtein_simd_core_avx_1x32x8, traceback_avx_1x32x8, Avx1x32x8, "avx2");
 create_levenshtein_simd_core!(levenshtein_simd_core_avx_2x32x8, traceback_avx_2x32x8, Avx2x32x8, "avx2");
 create_levenshtein_simd_core!(levenshtein_simd_core_avx_4x32x8, traceback_avx_4x32x8, Avx4x32x8, "avx2");
@@ -806,14 +929,72 @@ create_levenshtein_simd_core!(levenshtein_simd_core_sse_16x16x8, traceback_sse_1
 create_levenshtein_simd_core!(levenshtein_simd_core_sse_nx8x16, traceback_sse_nx8x16, SseNx8x16, "sse4.1");
 create_levenshtein_simd_core!(levenshtein_simd_core_sse_nx4x32, traceback_sse_nx4x32, SseNx4x32, "sse4.1");
 
+/// Returns the Levenshtein distance between two strings using SIMD acceleration.
+///
+/// Currently, this does not support null bytes/characters in the strings.
+/// Internally, this will call `levenshtein_simd_k`.
+/// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to a scalar alternative.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let dist = levenshtein(b"abc", b"ab");
+///
+/// assert!(dist == 1);
+/// ```
 pub fn levenshtein(a: &[u8], b: &[u8]) -> u32 {
     levenshtein_simd_k(a, b, u32::MAX).unwrap()
 }
 
+/// Returns the restricted Damerau-Levenshtein distance between two strings using SIMD acceleration.
+///
+/// Currently, this does not support null bytes/characters in the strings.
+/// Internally, this will call `levenshtein_simd_k_with_opts`.
+/// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to a scalar alternative.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let dist = rdamerau(b"abc", b"acb");
+///
+/// assert!(dist == 1);
+/// ```
 pub fn rdamerau(a: &[u8], b: &[u8]) -> u32 {
     levenshtein_simd_k_with_opts(a, b, u32::MAX, false, RDAMERAU_COSTS).unwrap().0
 }
 
+/// Returns the Levenshtein distance between two strings using exponential search and SIMD
+/// acceleration.
+///
+/// This may be more efficient than `levenshtein` if the number of edits between `a` and `b` is
+/// small.
+/// Currently, this does not support null bytes/characters in the strings.
+/// Internally, this will call `levenshtein_simd_k` with values of `k` determined through
+/// exponential search.
+/// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to a scalar alternative.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let dist = levenshtein_exp(b"abc", b"ab");
+///
+/// assert!(dist == 1);
+/// ```
 pub fn levenshtein_exp(a: &[u8], b: &[u8]) -> u32 {
     let mut k = 30;
     let mut res = levenshtein_simd_k(a, b, k);
@@ -826,10 +1007,57 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8]) -> u32 {
     res.unwrap()
 }
 
+/// Returns a vector of the best `Match`s by searching through the text `haystack` for the
+/// pattern `needle` using the naive algorithm.
+///
+/// The best matches are the matches with the lowest Levenshtein distance. Note that overlapping
+/// best matches may be returned.
+/// If multiple best matches end at the same position, then the longest match is chosen.
+///
+/// # Arguments
+/// * `needle` - pattern string (slice)
+/// * `haystack` - text string (slice)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+/// # use triple_accel::levenshtein::*;
+///
+/// let matches = levenshtein_search_naive(b"abc", b"  abd");
+///
+/// // note: it is possible to end the match at two different positions
+/// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
+/// ```
 pub fn levenshtein_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     levenshtein_search_naive_with_opts(needle, haystack, u32::MAX, SearchType::Best, LEVENSHTEIN_COSTS, false)
 }
 
+/// Returns a vector of `Match`s by searching through the text `haystack` for the
+/// pattern `needle` using the naive algorithm, with extra options.
+///
+/// Note that overlapping matches may be returned.
+/// If multiple matches end at the same position, then the longest match is chosen.
+///
+/// # Arguments
+/// * `needle` - pattern string (slice)
+/// * `haystack` - text string (slice)
+/// * `k` - maximum cost threshold for a match to be returned
+/// * `search_type` - indicates whether to return all matches (within a cost of `k`), the best matches with
+/// the lowest cost, or the first match that meets the threshold `k`
+/// * `costs` - `EditCosts` struct for the cost of each edit operation
+/// * `anchored` - whether the `needle` should be anchored to the start of the `haystack` string,
+/// causing any shifts to cost gap edits
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+/// # use triple_accel::levenshtein::*;
+///
+/// let matches = levenshtein_search_naive_with_opts(b"abc", b"  acb", 1, SearchType::All, RDAMERAU_COSTS, false);
+///
+/// // note: it is possible to end the match at two different positions
+/// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
+/// ```
 pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
@@ -935,10 +1163,69 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
     res
 }
 
+/// Returns a vector of the best `Match`s by searching through the text `haystack` for the
+/// pattern `needle` using SIMD acceleration.
+///
+/// The best matches are the matches with the lowest Levenshtein distance. Note that overlapping
+/// best matches may be returned.
+/// If multiple best matches end at the same position, then the longest match is chosen.
+/// This should be much faster than `levenshtein_search_naive`.
+/// Currently, this does not support null bytes/characters in the strings.
+/// Internally, this will automatically use AVX or SSE vectors with 8-bit, 16-bit, or 32-bit elements
+/// to represent anti-diagonals in the dynamic programming matrix for calculating Levenshtein distance.
+/// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to
+/// `levenshtein_search_naive_with_opts`.
+///
+/// # Arguments
+/// * `needle` - pattern string (slice)
+/// * `haystack` - text string (slice)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+/// # use triple_accel::levenshtein::*;
+///
+/// let matches = levenshtein_search_simd(b"abc", b"  abd");
+///
+/// // note: it is possible to end the match at two different positions
+/// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
+/// ```
 pub fn levenshtein_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     levenshtein_search_simd_with_opts(needle, haystack, u32::MAX, SearchType::Best, LEVENSHTEIN_COSTS, false)
 }
 
+/// Returns a vector of `Match`s by searching through the text `haystack` for the
+/// pattern `needle` using SIMD acceleration, with extra options.
+///
+/// Note that overlapping matches may be returned.
+/// If multiple matches end at the same position, then the longest match is chosen.
+/// This should be much faster than `levenshtein_search_naive_with_opts`.
+/// Currently, this does not support null bytes/characters in the strings.
+/// Internally, this will automatically use AVX or SSE vectors with 8-bit, 16-bit, or 32-bit elements
+/// to represent anti-diagonals in the dynamic programming matrix for calculating Levenshtein distance.
+/// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to
+/// `levenshtein_search_naive_with_opts`.
+///
+/// # Arguments
+/// * `needle` - pattern string (slice)
+/// * `haystack` - text string (slice)
+/// * `k` - maximum cost threshold for a match to be returned
+/// * `search_type` - indicates whether to return all matches (within a cost of `k`), the best matches with
+/// the lowest cost, or the first match that meets the threshold `k`
+/// * `costs` - `EditCosts` struct for the cost of each edit operation
+/// * `anchored` - whether the `needle` should be anchored to the start of the `haystack` string,
+/// causing any shifts to cost gap edits
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+/// # use triple_accel::levenshtein::*;
+///
+/// let matches = levenshtein_search_simd_with_opts(b"abc", b"  acb", 1, SearchType::All, RDAMERAU_COSTS, false);
+///
+/// // note: it is possible to end the match at two different positions
+/// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
+/// ```
 pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {
     if needle.len() == 0 {
         return vec![];
@@ -1172,6 +1459,7 @@ macro_rules! create_levenshtein_search_simd_core {
     };
 }
 
+// duplicate functions for each Jewel vector type
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_avx_1x32x8, Avx1x32x8, "avx2");
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_avx_2x32x8, Avx2x32x8, "avx2");
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_avx_4x32x8, Avx4x32x8, "avx2");
@@ -1187,6 +1475,29 @@ create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_16x16x8, S
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_nx8x16, SseNx8x16, "sse4.1");
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_nx4x32, SseNx4x32, "sse4.1");
 
+/// Returns a vector of best `Match`s by searching through the text `haystack` for the
+/// pattern `needle` using SIMD acceleration.
+///
+/// The best matches are the matches with the lowest Levenshtein distance. Note that overlapping
+/// best matches may be returned.
+/// If multiple best matches end at the same position, then the longest match is chosen.
+/// Currently, this does not support null bytes/characters in the strings.
+/// Internally, this will call `levenshtein_search_simd`.
+/// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to a scalar alternative.
+///
+/// # Arguments
+/// * `needle` - pattern string (slice)
+/// * `haystack` - text string (slice)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+///
+/// let matches = levenshtein_search(b"abc", b"  abd");
+///
+/// // note: it is possible to end the match at two different positions
+/// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
+/// ```
 pub fn levenshtein_search(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
     levenshtein_search_simd(needle, haystack)
 }
