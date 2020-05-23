@@ -56,7 +56,7 @@
 
 use std::*;
 
-pub mod jewel;
+mod jewel;
 pub mod hamming;
 pub mod levenshtein;
 
@@ -96,7 +96,9 @@ pub enum EditType {
 /// This is returned in the run-length encoded traceback of edit distance routines.
 #[derive(Debug, PartialEq)]
 pub struct Edit {
+    /// The type of edit operation.
     pub edit: EditType,
+    /// The number of consecutive edit operations of the same type.
     pub count: usize
 }
 
@@ -127,7 +129,6 @@ pub enum SearchType {
 /// # Example
 /// ```
 /// # use triple_accel::*;
-///
 /// let s = alloc_str(10);
 ///
 /// assert!(s.len() == 10);
@@ -157,7 +158,6 @@ pub fn alloc_str(len: usize) -> Vec<u8> {
 /// # Example
 /// ```
 /// # use triple_accel::*;
-///
 /// let mut a = vec![0u8; 5];
 /// let b = vec![1u8, 2u8, 3u8, 4u8];
 ///

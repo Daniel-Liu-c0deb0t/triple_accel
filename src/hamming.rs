@@ -16,7 +16,6 @@ use super::jewel::*;
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::hamming::*;
-///
 /// let dist = hamming_naive(b"abc", b"abd");
 ///
 /// assert!(dist == 1);
@@ -49,7 +48,6 @@ pub fn hamming_naive(a: &[u8], b: &[u8]) -> u32 {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::hamming::*;
-///
 /// let matches = hamming_search_naive(b"abc", b"  abd");
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
@@ -76,7 +74,6 @@ pub fn hamming_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::hamming::*;
-///
 /// let matches = hamming_search_naive_with_opts(b"abc", b"  abd", 1, SearchType::All);
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
@@ -139,7 +136,6 @@ pub fn hamming_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32, se
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::hamming::*;
-///
 /// let mut a = alloc_str(3);
 /// let mut b = alloc_str(3);
 /// fill_str(&mut a, b"abc");
@@ -213,7 +209,6 @@ pub fn hamming_words_64(a: &[u8], b: &[u8]) -> u32 {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::hamming::*;
-///
 /// let mut a = alloc_str(3);
 /// let mut b = alloc_str(3);
 /// fill_str(&mut a, b"abc");
@@ -287,7 +282,6 @@ pub fn hamming_words_128(a: &[u8], b: &[u8]) -> u32 {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::hamming::*;
-///
 /// let dist = hamming_simd_parallel(b"abc", b"abd");
 ///
 /// assert!(dist == 1);
@@ -325,7 +319,6 @@ pub fn hamming_simd_parallel(a: &[u8], b: &[u8]) -> u32 {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::hamming::*;
-///
 /// let dist = hamming_simd_movemask(b"abc", b"abd");
 ///
 /// assert!(dist == 1);
@@ -362,7 +355,6 @@ pub fn hamming_simd_movemask(a: &[u8], b: &[u8]) -> u32 {
 /// # Example
 /// ```
 /// # use triple_accel::*;
-///
 /// let dist = hamming(b"abc", b"abd");
 ///
 /// assert!(dist == 1);
@@ -390,7 +382,6 @@ pub fn hamming(a: &[u8], b: &[u8]) -> u32 {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::hamming::*;
-///
 /// let matches = hamming_search_simd(b"abc", b"  abd");
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
@@ -420,7 +411,6 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::hamming::*;
-///
 /// let matches = hamming_search_simd_with_opts(b"abc", b"  abd", 1, SearchType::All);
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
@@ -528,7 +518,6 @@ create_hamming_search_simd_core!(hamming_search_simd_core_sse, Sse, "sse4.1");
 /// # Example
 /// ```
 /// # use triple_accel::*;
-///
 /// let matches = hamming_search(b"abc", b"  abd");
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);

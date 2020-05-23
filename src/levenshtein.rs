@@ -64,7 +64,6 @@ pub const RDAMERAU_COSTS: EditCosts = EditCosts{mismatch_cost: 1, gap_cost: 1, t
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-///
 /// let dist = levenshtein_naive(b"abc", b"ab");
 ///
 /// assert!(dist == 1);
@@ -86,7 +85,6 @@ pub fn levenshtein_naive(a: &[u8], b: &[u8]) -> u32 {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-///
 /// let dist = levenshtein_naive_with_opts(b"abc", b"ab", true, LEVENSHTEIN_COSTS);
 ///
 /// assert!(dist == (1, Some(vec![Edit{edit: EditType::Match, count: 2},
@@ -240,7 +238,6 @@ pub fn levenshtein_naive_with_opts(a: &[u8], b: &[u8], trace_on: bool, costs: Ed
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-///
 /// let dist = levenshtein_naive_k(b"abc", b"ab", 1);
 ///
 /// assert!(dist.unwrap() == 1);
@@ -273,7 +270,6 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32) -> Option<u32> {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-///
 /// let dist = levenshtein_naive_k_with_opts(b"abc", b"ab", 1, true, LEVENSHTEIN_COSTS);
 ///
 /// assert!(dist.unwrap() == (1, Some(vec![Edit{edit: EditType::Match, count: 2},
@@ -459,7 +455,6 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-///
 /// let dist = levenshtein_simd_k(b"abc", b"ab", 1);
 ///
 /// assert!(dist.unwrap() == 1);
@@ -497,7 +492,6 @@ pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32) -> Option<u32> {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-///
 /// let dist = levenshtein_simd_k_with_opts(b"abc", b"ab", 1, true, LEVENSHTEIN_COSTS);
 ///
 /// assert!(dist.unwrap() == (1, Some(vec![Edit{edit: EditType::Match, count: 2},
@@ -942,7 +936,6 @@ create_levenshtein_simd_core!(levenshtein_simd_core_sse_nx4x32, traceback_sse_nx
 /// # Example
 /// ```
 /// # use triple_accel::*;
-///
 /// let dist = levenshtein(b"abc", b"ab");
 ///
 /// assert!(dist == 1);
@@ -964,7 +957,6 @@ pub fn levenshtein(a: &[u8], b: &[u8]) -> u32 {
 /// # Example
 /// ```
 /// # use triple_accel::*;
-///
 /// let dist = rdamerau(b"abc", b"acb");
 ///
 /// assert!(dist == 1);
@@ -990,7 +982,6 @@ pub fn rdamerau(a: &[u8], b: &[u8]) -> u32 {
 /// # Example
 /// ```
 /// # use triple_accel::*;
-///
 /// let dist = levenshtein_exp(b"abc", b"ab");
 ///
 /// assert!(dist == 1);
@@ -1022,7 +1013,6 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8]) -> u32 {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-///
 /// let matches = levenshtein_search_naive(b"abc", b"  abd");
 ///
 /// // note: it is possible to end the match at two different positions
@@ -1052,7 +1042,6 @@ pub fn levenshtein_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-///
 /// let matches = levenshtein_search_naive_with_opts(b"abc", b"  acb", 1, SearchType::All, RDAMERAU_COSTS, false);
 ///
 /// // note: it is possible to end the match at two different positions
@@ -1184,7 +1173,6 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-///
 /// let matches = levenshtein_search_simd(b"abc", b"  abd");
 ///
 /// // note: it is possible to end the match at two different positions
@@ -1220,7 +1208,6 @@ pub fn levenshtein_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-///
 /// let matches = levenshtein_search_simd_with_opts(b"abc", b"  acb", 1, SearchType::All, RDAMERAU_COSTS, false);
 ///
 /// // note: it is possible to end the match at two different positions
@@ -1492,7 +1479,6 @@ create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_nx4x32, Ss
 /// # Example
 /// ```
 /// # use triple_accel::*;
-///
 /// let matches = levenshtein_search(b"abc", b"  abd");
 ///
 /// // note: it is possible to end the match at two different positions

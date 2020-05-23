@@ -39,7 +39,8 @@ fn bench_rand_levenshtein(c: &mut Criterion) {
     let mut group = c.benchmark_group("bench_rand_levenshtein");
 
     group.bench_function("levenshtein_naive", |b| b.iter(|| levenshtein_naive(&a_str, &b_str)));
-    group.bench_function("levenshtein_exp", |b| b.iter(|| levenshtein_exp(&a_str, &b_str, false)));
+    group.bench_function("levenshtein_exp", |b| b.iter(|| levenshtein_exp(&a_str, &b_str)));
+    group.bench_function("levenshtein", |b| b.iter(|| levenshtein(&a_str, &b_str)));
 
     group.finish();
 }
