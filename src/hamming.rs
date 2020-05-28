@@ -87,7 +87,7 @@ pub fn hamming_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32, se
     }
 
     let len = haystack_len + 1 - needle_len;
-    let mut res = Vec::with_capacity(len >> 2);
+    let mut res = Vec::with_capacity(haystack_len / needle_len);
     let mut curr_k = k;
 
     'outer: for i in 0..len {
@@ -451,7 +451,7 @@ macro_rules! create_hamming_search_simd_core {
             let needle_vector = <$jewel>::loadu(needle.as_ptr(), needle_len);
             let len = if needle_vector.upper_bound() > haystack_len {0} else {haystack_len + 1 - needle_vector.upper_bound()};
             let real_len = haystack_len + 1 - needle_len;
-            let mut res = Vec::with_capacity(len >> 2);
+            let mut res = Vec::with_capacity(haystack_len / needle_len);
             let haystack_ptr = haystack.as_ptr();
             let mut curr_k = k;
 

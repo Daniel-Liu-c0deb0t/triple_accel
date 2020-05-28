@@ -1074,7 +1074,7 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
     let mut length0 = vec![0usize; len];
     let mut length1 = vec![0usize; len];
     let mut length2 = vec![0usize; len];
-    let mut res = Vec::with_capacity(iter_len >> 2);
+    let mut res = Vec::with_capacity((iter_len + needle_len) / needle_len);
     let mut curr_k = max_k;
     let mismatch_cost = costs.mismatch_cost as u32;
     let gap_cost = costs.gap_cost as u32;
@@ -1303,7 +1303,7 @@ macro_rules! create_levenshtein_search_simd_core {
 
             let final_idx = dp1.upper_bound() - needle_len;
 
-            let mut res = Vec::with_capacity((len - needle_len) >> 2);
+            let mut res = Vec::with_capacity(len / needle_len);
 
             // load needle characters into needle_window in reversed order
             let mut needle_window = <$jewel>::repeating(0, needle_len);
