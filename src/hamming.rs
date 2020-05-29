@@ -453,6 +453,7 @@ macro_rules! create_hamming_search_simd_core {
             // calculate len using the unused bytes in the needle Jewel vector, for speed
             // there may be leftover positions in haystack that need to be calculated using a
             // scalar search afterwards
+            // there should be no null bytes in the strings
             let len = if needle_vector.upper_bound() > haystack_len {0} else {haystack_len + 1 - needle_vector.upper_bound()};
             let real_len = haystack_len + 1 - needle_len;
             let mut res = Vec::with_capacity(haystack_len / needle_len);

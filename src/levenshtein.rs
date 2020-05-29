@@ -1428,7 +1428,7 @@ macro_rules! create_levenshtein_search_simd_core {
                         // dp0 is four diagonals behind the current i
                         dp0.insert_last_1(cmp::min((i as u32 - 3) * (costs.gap_cost as u32), k + 1));
                     }
-                    // last value in dp0 should not matter if no zero bytes are in the strings
+                    // last value in dp0 should not matter if we assume no null bytes are in the strings
 
                     length0.shift_left_2_mut();
                     <$jewel>::adds(&dp0, &transpose_cost, &mut transpose);
