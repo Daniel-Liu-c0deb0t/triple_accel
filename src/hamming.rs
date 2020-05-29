@@ -1,3 +1,14 @@
+//! This module provides many Hamming distance routines.
+//!
+//! These distance functions share the same efficient underlying SIMD-accelerated implementation:
+//! * `hamming`
+//! * `hamming_simd_parallel`
+//!
+//! These search functions share the same efficient underlying SIMD-accelerated implementation:
+//! * `hamming_search`
+//! * `hamming_search_simd`
+//! * `hamming_search_simd_with_opts`
+
 use super::*;
 use super::jewel::*;
 

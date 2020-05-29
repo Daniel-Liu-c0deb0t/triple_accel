@@ -1,3 +1,16 @@
+//! This module provides many Levenshtein distance routines.
+//!
+//! These distance functions share the same efficient underlying SIMD-accelerated implementation:
+//! * `levenshtein_exp` for low number of edits, otherwise `levenshtein`
+//! * `rdamerau_exp` for low number of edits, otherwise `rdamerau`
+//! * `levenshtein_simd_k`
+//! * `levenshtein_simd_k_with_opts`
+//!
+//! These search functions share the same efficient underlying SIMD-accelerated implementation:
+//! * `levenshtein_search`
+//! * `levenshtein_search_simd`
+//! * `levenshtein_search_simd_with_opts`
+
 use std::*;
 use super::*;
 use super::jewel::*;
@@ -40,6 +53,9 @@ impl EditCosts {
 
     /// For Levenshtein searches, the cost of transpositions must be less than or equal to cost of
     /// gaps.
+    ///
+    /// This is important for free gaps at the beginning of the needle to take priority over
+    /// transpositions.
     fn check_search(&self) {
         if let Some(cost) = self.transpose_cost {
             assert!(cost <= self.gap_cost);
@@ -962,6 +978,8 @@ pub fn levenshtein(a: &[u8], b: &[u8]) -> u32 {
 
 /// Returns the restricted Damerau-Levenshtein distance between two strings using SIMD acceleration.
 ///
+/// Note that `rdamerau_exp` may be much faster if the number of edits between the two strings
+/// is expected to be small.
 /// Currently, this does not support null bytes/characters in the strings.
 /// Internally, this will call `levenshtein_simd_k_with_opts`.
 /// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to a scalar alternative.
@@ -1014,6 +1032,41 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8]) -> u32 {
 
     // should not panic
     res.unwrap()
+}
+
+/// Returns the restricted Damerau-Levenshtein distance between two strings using exponential
+/// search and SIMD acceleration.
+///
+/// This may be much more efficient than `rdamerau` if the number of edits between `a` and `b`
+/// is expected to be small.
+/// Currently, this does not support null bytes/characters in the strings.
+/// Internally, this will call `levenshtein_simd_k_with_opts` with values of `k` determined through
+/// exponential search.
+/// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to a scalar alternative.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+/// let dist = rdamerau_exp(b"abc", b"acb");
+///
+/// assert!(dist == 1);
+/// ```
+pub fn rdamerau_exp(a: &[u8], b: &[u8]) -> u32 {
+    let mut k = 30;
+    let mut res = levenshtein_simd_k_with_opts(a, b, k, false, RDAMERAU_COSTS);
+
+    // exponential search
+    while res.is_none() {
+        k <<= 1;
+        res = levenshtein_simd_k_with_opts(a, b, k, false, RDAMERAU_COSTS);
+    }
+
+    // should not panic
+    res.unwrap().0
 }
 
 /// Returns a vector of the best `Match`s by searching through the text `haystack` for the

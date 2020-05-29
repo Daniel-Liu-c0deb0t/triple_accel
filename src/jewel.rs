@@ -1,3 +1,5 @@
+//! This module provides wrappers for SIMD intrinsics, so they can be used on multiple platforms.
+
 use std::*;
 
 #[cfg(target_arch = "x86")]

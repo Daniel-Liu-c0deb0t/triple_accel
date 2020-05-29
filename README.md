@@ -11,7 +11,7 @@ use triple_accel::*;
 let a = b"abcd";
 let b = b"abcc";
 
-let dist = hamming(&a, &b);
+let dist = hamming(a, b);
 assert!(dist == 1);
 ```
 By default, `triple_accel` will choose to use the fastest implementation at runtime, based on CPU features, going down the list:
@@ -24,18 +24,22 @@ This means that the routines provided by `triple_accel` are safe to run on CPUs 
 
 Similarly, we can easily calculate the Levenshtein distance (character mismatches and gaps all have a cost of 1) between two strings with the following code:
 ```Rust
+use triple_accel::*;
+
 let a = b"abc";
 let b = b"abcd";
 
-let dist = levenshtein_exp(&a, &b);
+let dist = levenshtein_exp(a, b);
 assert!(dist == 1);
 ```
 In addition to edit distance routines, `triple_accel` also provides search routines. These routines return a vector of matches that indicate where the `needle` string matches the `haystack` string. `triple_accel` will attempt to maximize the length of matches that end at the same position.
 ```Rust
+use triple_accel::*;
+
 let needle = b"helllo";
 let haystack = b"hello world";
 
-let matches = levenshtein_search(&needle, &haystack);
+let matches = levenshtein_search(needle, haystack);
 // note: start index is inclusive, end index is exclusive!
 assert!(matches == vec![Match{start: 0, end: 5, k: 1}]);
 ```
@@ -48,7 +52,7 @@ let b = b"abdc";
 let k = 2; // upper bound on allowed cost
 let trace_on = false; // return edit traceback?
 
-let dist = levenshtein_simd_k_with_opts(&a, &b, k, trace_on, RDAMERAU_COSTS);
+let dist = levenshtein_simd_k_with_opts(a, b, k, trace_on, RDAMERAU_COSTS);
 // note: dist may be None if a and b do not match within a cost of k
 assert!(dist.unwrap().0 == 1);
 ```
