@@ -106,7 +106,7 @@ pub fn levenshtein_naive_with_opts(a: &[u8], b: &[u8], trace_on: bool, costs: Ed
 
     let len = a_new_len + 1;
     let mut dp0 = vec![0u32; len];
-    let mut dp1 = vec![0u32; len]; // in each iteration, dp1 is already calculated
+    let mut dp1 = vec![0u32; len]; // in each iteration, dp0 and dp1 are already calculated
     let mut dp2 = vec![0u32; len]; // dp2 the currently calculated column
     let mut traceback = if trace_on {vec![0u8; (b_new_len + 1) * len]} else {vec![]};
 
@@ -172,6 +172,7 @@ pub fn levenshtein_naive_with_opts(a: &[u8], b: &[u8], trace_on: bool, costs: Ed
     }
 
     if trace_on {
+        // estimate an upper bound for the number of Edits
         let mut upper_bound_edits = dp1[a_new_len] / cmp::min(mismatch_cost, gap_cost);
 
         if allow_transpose {
@@ -288,8 +289,10 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
         None => 0
     };
     let allow_transpose = costs.transpose_cost.is_some();
+    // upper bound on the number of edits, in case k is too large
     let max_k = cmp::min((a_new_len as u32) * mismatch_cost, ((a_new_len << 1) as u32) * gap_cost);
     let max_k = cmp::min(k, max_k + ((b_new_len - a_new_len) as u32) * gap_cost);
+    // farthest we can stray from the main diagonal
     let unit_k = (max_k / gap_cost) as usize;
 
     if b_new_len - a_new_len > unit_k {
@@ -304,7 +307,7 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
     let mut prev_hi;
     let k_len = cmp::min((unit_k << 1) + 1, b_new_len + 1);
     let mut dp0 = vec![0u32; k_len];
-    let mut dp1 = vec![0u32; k_len]; // in each iteration, dp1 is already calculated
+    let mut dp1 = vec![0u32; k_len]; // in each iteration, dp0 and dp1 are already calculated
     let mut dp2 = vec![0u32; k_len]; // dp2 the currently calculated row
     let mut traceback = if trace_on {vec![0u8; len * k_len]} else {vec![]};
 
@@ -317,6 +320,7 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
     }
 
     for i in 1..len {
+        // keep track of prev_lo for the offset of previous rows
         prev_lo0 = prev_lo1;
         prev_lo1 = lo;
         prev_hi = hi;
@@ -388,6 +392,7 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
         return Some((dp1[hi - lo - 1], None));
     }
 
+    // estimate an upper bound for the number of Edits
     let mut upper_bound_edits = dp1[hi - lo - 1] / cmp::min(mismatch_cost, gap_cost);
 
     if allow_transpose {
@@ -506,8 +511,10 @@ pub fn levenshtein_simd_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool, 
     {
         let min_len = cmp::min(a.len(), b.len()) as u32;
         let max_len = cmp::max(a.len(), b.len()) as u32;
+        // upper bound on the number of edits, in case k is too large
         let max_k = cmp::min(min_len * (costs.mismatch_cost as u32), (min_len << 1) * (costs.gap_cost as u32));
         let max_k = cmp::min(k, max_k + (max_len - min_len) * (costs.gap_cost as u32));
+        // farthest we can stray from the main diagonal
         let unit_k = cmp::min(max_k / (costs.gap_cost as u32), max_len);
 
         // note: do not use the MAX value, because it indicates overflow/inaccuracy
@@ -625,7 +632,7 @@ macro_rules! create_levenshtein_simd_core {
                 }
             };
 
-            // 0 = match/mismatch, 1 = a gap, 2 = b gap
+            // 0 = match/mismatch, 1 = a gap, 2 = b gap, 3 = transpose
             let mut traceback_arr = if trace_on {Vec::with_capacity(len + (len & 1))} else {vec![]};
 
             if trace_on {
@@ -638,6 +645,7 @@ macro_rules! create_levenshtein_simd_core {
             // reusable constant
             let threes = <$jewel>::repeating(3, max_len);
 
+            // used in calculations
             let mut sub = <$jewel>::repeating(0, max_len);
             let mut match_mask0 = <$jewel>::repeating(0, max_len);
             let mut match_mask1 = <$jewel>::repeating(0, max_len);
@@ -669,15 +677,19 @@ macro_rules! create_levenshtein_simd_core {
             //
             // dp2 is one diagonal before current
             // dp1 is two diagonals before current
+            // dp0 is four diagonals before current
+            // dp0 is useful for transpositions
             // we are trying to calculate the "current" diagonal
             // note that a k1 '*' dp diagonal has its center cell on the main diagonal
             // in general, the diagonals are centered on the main diagonal
-            // each diagonal is represented using a 256-bit vector
+            // each diagonal is represented using a Jewel vector
             // each vector goes from bottom-left to top-right
             //
             // the a windows and b windows are queues of a fixed length
             // a is reversed, so that elementwise comparison can be done between a and b
             // this operation obtains the comparison of characters along the (anti) diagonal
+            // if transpositions are allowed, then previous match_masks must be saved to calculate
+            // a[i - 1] == b[j] and a[i] == b[j - 1]
             //
             // example of moving the windows:
             // a windows: [5 4 3 2 1] -> [6 5 4 3 2] (right shift + insert)
@@ -687,7 +699,7 @@ macro_rules! create_levenshtein_simd_core {
             // a windows: [2 1 0 0 0]
             // b windows: [0 0 0 1 2]
             //
-            // note that there will be left over cells not filled in the SIMD vector
+            // note that there will be left over cells not filled in the Jewel vector
             // this is because k1 and k2 are not long enough
             // all of these empty cells should be at the end of the SIMD vectors
             //
@@ -725,7 +737,7 @@ macro_rules! create_levenshtein_simd_core {
                 b_k2_window.shift_left_1_mut();
 
                 if k2_idx < b_len {
-                    b_k2_window.insert_last_2(*b.get_unchecked(k2_idx) as u32);
+                    b_k2_window.insert_last_2(*b.get_unchecked(k2_idx) as u32); // k2 - 1
                 }
 
                 // (anti) diagonal that matches in the a and b windows
@@ -742,6 +754,7 @@ macro_rules! create_levenshtein_simd_core {
                 if allow_transpose {
                     <$jewel>::shift_right_1(&match_mask0, &mut transpose); // reuse transpose
                     transpose.and_mut(&match_mask0);
+                    // make sure that current matching locations are excluded
                     <$jewel>::andnot(&match_mask1, &transpose, &mut match_mask0); // reuse match_mask0 to represent transpose mask
                     <$jewel>::adds(&dp0, &transpose_cost, &mut transpose);
                 }
@@ -787,6 +800,7 @@ macro_rules! create_levenshtein_simd_core {
                 if allow_transpose {
                     <$jewel>::shift_left_1(&match_mask0, &mut transpose); // reuse transpose
                     transpose.and_mut(&match_mask0);
+                    // make sure that current matching locations are excluded
                     <$jewel>::andnot(&match_mask1, &transpose, &mut match_mask0); // reuse match_mask0 to represent transpose mask
                     <$jewel>::adds(&dp0, &transpose_cost, &mut transpose);
                 }
@@ -992,11 +1006,13 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8]) -> u32 {
     let mut k = 30;
     let mut res = levenshtein_simd_k(a, b, k);
 
+    // exponential search
     while res.is_none() {
         k <<= 1;
         res = levenshtein_simd_k(a, b, k);
     }
 
+    // should not panic
     res.unwrap()
 }
 
@@ -1057,6 +1073,7 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
         return vec![];
     }
 
+    // enforce another constraint on the costs
     costs.check_search();
 
     let len = needle_len + 1;
@@ -1074,6 +1091,7 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
     let mut length0 = vec![0usize; len];
     let mut length1 = vec![0usize; len];
     let mut length2 = vec![0usize; len];
+    // estimate the number of Matchs
     let mut res = Vec::with_capacity((iter_len + needle_len) / needle_len);
     let mut curr_k = max_k;
     let mismatch_cost = costs.mismatch_cost as u32;
@@ -1303,6 +1321,7 @@ macro_rules! create_levenshtein_search_simd_core {
 
             let final_idx = dp1.upper_bound() - needle_len;
 
+            // estimate the number of Matchs
             let mut res = Vec::with_capacity(len / needle_len);
 
             // load needle characters into needle_window in reversed order
@@ -1313,6 +1332,7 @@ macro_rules! create_levenshtein_search_simd_core {
             let mut haystack_idx = 0usize;
             let mut curr_k = k;
 
+            // used in calculations
             let mut match_mask0 = <$jewel>::repeating(0, needle_len);
             let mut match_mask1 = <$jewel>::repeating(0, needle_len);
             let mut match_mask_cost = <$jewel>::repeating(0, needle_len);
@@ -1344,8 +1364,16 @@ macro_rules! create_levenshtein_search_simd_core {
             // 'n' = needle, 'h' = haystack
             // each (anti) diagonal is denoted using '/' and 'x'
             // 'x' marks cells that are not in the traditional dp array
-            // every (anti) diagonal is calculated simultaneously using vectors
-            // note: each vector goes from bottom-left to top-right
+            // every (anti) diagonal is calculated simultaneously using Jewel vectors
+            // note: each vector goes from bottom-left to top-right, ending at the first row in the
+            // DP matrix
+            // similar to levenshtein_simd_k, but without alternating anti-diagonals
+            // note that the first row, which should be all zeros for searching, is not saved in the
+            // Jewel vectors, for space concerns
+            // therefore, starting at i = 1 does not include the first diagonal that only contains
+            // a zero from the initial row of zeros
+            // when left shift are required, then zeros must be shifted in
+            // if anchored = true, then the number of gaps times the gap cost must be shifted in
 
             for i in 1..len {
                 // shift the haystack window
@@ -1392,12 +1420,15 @@ macro_rules! create_levenshtein_search_simd_core {
                 if allow_transpose {
                     <$jewel>::shift_left_1(&match_mask0, &mut transpose); // reuse transpose
                     transpose.and_mut(&match_mask0);
+                    // ensure that current matches are excluded
                     <$jewel>::andnot(&match_mask1, &transpose, &mut match_mask0); // reuse match_mask0 to represent transpose mask
                     dp0.shift_left_2_mut();
 
                     if anchored && i > 2 {
+                        // dp0 is four diagonals behind the current i
                         dp0.insert_last_1(cmp::min((i as u32 - 3) * (costs.gap_cost as u32), k + 1));
                     }
+                    // last value in dp0 should not matter if no zero bytes are in the strings
 
                     length0.shift_left_2_mut();
                     <$jewel>::adds(&dp0, &transpose_cost, &mut transpose);

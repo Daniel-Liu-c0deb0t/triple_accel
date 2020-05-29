@@ -2139,6 +2139,7 @@ impl HammingJewel for Avx {
             let a = _mm256_loadu_si256(avx2_a_ptr.offset(i));
             let b = _mm256_loadu_si256(avx2_b_ptr.offset(i));
             let eq = _mm256_cmpeq_epi8(a, b);
+            // basic movemask count equal bytes
             res += _mm256_movemask_epi8(eq).count_ones();
         }
 
@@ -2294,6 +2295,7 @@ impl HammingJewel for Sse {
             let a = _mm_loadu_si128(sse_a_ptr.offset(i));
             let b = _mm_loadu_si128(sse_b_ptr.offset(i));
             let eq = _mm_cmpeq_epi8(a, b);
+            // basic movemask count equal bytes
             res += _mm_movemask_epi8(eq).count_ones();
         }
 

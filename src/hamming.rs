@@ -96,6 +96,7 @@ pub fn hamming_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32, se
         for j in 0..needle_len {
             final_res += (needle[j] != haystack[i + j]) as u32;
 
+            // early stop
             if final_res > curr_k {
                 continue 'outer;
             }
@@ -449,6 +450,9 @@ macro_rules! create_hamming_search_simd_core {
             let needle_len = needle.len();
             let haystack_len = haystack.len();
             let needle_vector = <$jewel>::loadu(needle.as_ptr(), needle_len);
+            // calculate len using the unused bytes in the needle Jewel vector, for speed
+            // there may be leftover positions in haystack that need to be calculated using a
+            // scalar search afterwards
             let len = if needle_vector.upper_bound() > haystack_len {0} else {haystack_len + 1 - needle_vector.upper_bound()};
             let real_len = haystack_len + 1 - needle_len;
             let mut res = Vec::with_capacity(haystack_len / needle_len);
@@ -469,6 +473,7 @@ macro_rules! create_hamming_search_simd_core {
                 }
             }
 
+            // scalar search
             'outer: for i in len..real_len {
                 let mut final_res = 0u32;
 
@@ -498,6 +503,7 @@ macro_rules! create_hamming_search_simd_core {
     };
 }
 
+// generate different versions for different intrinsics
 create_hamming_search_simd_core!(hamming_search_simd_core_avx, Avx, "avx2");
 create_hamming_search_simd_core!(hamming_search_simd_core_sse, Sse, "sse4.1");
 

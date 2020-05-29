@@ -1,5 +1,5 @@
 # triple_accel
-![Build and Test](https://github.com/Daniel-Liu-c0deb0t/triple_accel/workflows/Build%20and%20Test/badge.svg)
+![Build and Test](https://github.com/Daniel-Liu-c0deb0t/triple_accel/workflows/Test/badge.svg)
 
 Rust edit distance routines accelerated using SIMD, with support for Hamming, Levenshtein, etc. distances.
 
