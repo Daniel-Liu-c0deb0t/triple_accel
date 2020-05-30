@@ -1,6 +1,8 @@
 # triple_accel
 ![Test](https://github.com/Daniel-Liu-c0deb0t/triple_accel/workflows/Test/badge.svg)
 ![GitHub](https://img.shields.io/github/license/Daniel-Liu-c0deb0t/triple_accel)
+![Crates.io](https://img.shields.io/crates/v/triple_accel)
+![Docs.rs](https://docs.rs/triple_accel/badge.svg)
 
 Rust edit distance routines accelerated using SIMD, with support for Hamming, Levenshtein, etc.
 distances.
@@ -20,9 +22,10 @@ machines without SIMD support by automatically using scalar alternatives.
 ## Install
 Add
 ```
-triple_accel = ""
+triple_accel = "*"
 ```
-to the `[dependencies]` section of your `Cargo.toml`. This library is available [here]() on crates.io.
+to the `[dependencies]` section of your `Cargo.toml`. This library is available
+[here](https://crates.io/crates/triple_accel) on crates.io.
 
 Alternatively, you can clone this repository and run
 ```
@@ -50,7 +53,8 @@ cargo bench
 ```
 
 ## Docs
-The docs are available [here](). To build them on your machine, run
+The docs are available [here](https://docs.rs/triple_accel). To build them on
+your machine, run
 ```
 cargo doc
 ```
