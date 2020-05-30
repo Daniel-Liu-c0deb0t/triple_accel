@@ -1,5 +1,6 @@
 # triple_accel
 ![Test](https://github.com/Daniel-Liu-c0deb0t/triple_accel/workflows/Test/badge.svg)
+![GitHub](https://img.shields.io/github/license/Daniel-Liu-c0deb0t/triple_accel)
 
 Rust edit distance routines accelerated using SIMD, with support for Hamming, Levenshtein, etc.
 distances.
@@ -147,15 +148,7 @@ have to be used directly.
 [MIT](LICENSE)
 
 ## Contributing
-Contributions are welcome!
-
-* Open an issue for questions or bug reports.
-* Make sure all tests pass for pull requests. Note that both the SIMD and scalar variants of the code
-should return the same result. Remember to add tests for new features!
-* Performance regressions due to code changes should be reported in the pull requests. New benchmarks
-should be added, if necessary. Performance is very important in this library!
-* Use a similar code style as the current code for pull requests.
-* It may be helpful to inspect the LLVM-IR or assembly output by using `build_ir_asm.sh`.
+Read the contributing guidelines [here](CONTRIBUTING.md).
 
 ## Code of Conduct
 Read the code of conduct [here](CODE_OF_CONDUCT.md).
