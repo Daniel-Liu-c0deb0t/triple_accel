@@ -4,10 +4,15 @@ use triple_accel::levenshtein::*;
 
 #[test]
 fn test_basic_hamming_naive() {
-    let a = b"abc";
-    let b = b"abd";
-    let dist = hamming_naive(a, b);
+    let a1 = b"abc";
+    let b1 = b"abd";
+    let dist = hamming_naive(a1, b1);
     assert!(dist == 1);
+
+    let a2 = b"";
+    let b2 = b"";
+    let dist = hamming_naive(a2, b2);
+    assert!(dist == 0);
 }
 
 #[test]
@@ -68,18 +73,28 @@ fn test_basic_hamming_words_128() {
 
 #[test]
 fn test_basic_hamming_simd_movemask() {
-    let a = b"abcaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    let b = b"abdaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    let dist = hamming_simd_movemask(a, b);
+    let a1 = b"abcaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let b1 = b"abdaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let dist = hamming_simd_movemask(a1, b1);
     assert!(dist == 1);
+
+    let a2 = b"";
+    let b2 = b"";
+    let dist = hamming_simd_movemask(a2, b2);
+    assert!(dist == 0);
 }
 
 #[test]
 fn test_basic_hamming_simd_parallel() {
-    let a = b"abcaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    let b = b"abdaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    let dist = hamming_simd_parallel(a, b);
+    let a1 = b"abcaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let b1 = b"abdaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let dist = hamming_simd_parallel(a1, b1);
     assert!(dist == 1);
+
+    let a2 = b"";
+    let b2 = b"";
+    let dist = hamming_simd_parallel(a2, b2);
+    assert!(dist == 0);
 }
 
 #[test]
@@ -217,6 +232,62 @@ fn test_basic_levenshtein_exp() {
     let a5 = b"abcde";
     let b5 = b"abbde";
     res = levenshtein_exp(a5, b5);
+    assert!(res == 1);
+}
+
+#[test]
+fn test_basic_rdamerau() {
+    let a1 = b"abcde";
+    let b1 = b" ab dce";
+    let mut res = rdamerau(a1, b1);
+    assert!(res == 3);
+
+    let a2 = b"abcde";
+    let b2 = b"";
+    res = rdamerau(a2, b2);
+    assert!(res == 5);
+
+    let a3 = b"abcde";
+    let b3 = b"bacdee";
+    res = rdamerau(a3, b3);
+    assert!(res == 2);
+
+    let a4 = b"abcde";
+    let b4 = b"acde";
+    res = rdamerau(a4, b4);
+    assert!(res == 1);
+
+    let a5 = b"abcde";
+    let b5 = b"abbde";
+    res = rdamerau(a5, b5);
+    assert!(res == 1);
+}
+
+#[test]
+fn test_basic_rdamerau_exp() {
+    let a1 = b"abcde";
+    let b1 = b" ab dce";
+    let mut res = rdamerau_exp(a1, b1);
+    assert!(res == 3);
+
+    let a2 = b"abcde";
+    let b2 = b"";
+    res = rdamerau_exp(a2, b2);
+    assert!(res == 5);
+
+    let a3 = b"abcde";
+    let b3 = b"bacdee";
+    res = rdamerau_exp(a3, b3);
+    assert!(res == 2);
+
+    let a4 = b"abcde";
+    let b4 = b"acde";
+    res = rdamerau_exp(a4, b4);
+    assert!(res == 1);
+
+    let a5 = b"abcde";
+    let b5 = b"abbde";
+    res = rdamerau_exp(a5, b5);
     assert!(res == 1);
 }
 

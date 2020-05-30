@@ -9,6 +9,9 @@
 //! that fall back to scalar routines if the target CPU architecture is not supported.
 //! Additionally, all limitations and tradeoffs of edit distance routines should be provided upfront
 //! so the user knows exactly what to expect.
+//! `triple_accel` is very lightweight: it only has dependencies on other crates for benchmarking.
+//! It can be built on machines without CPUs that have AVX2 or SSE4.1 support. It can also run on
+//! machines without SIMD support by automatically using scalar alternatives.
 //!
 //! ## Features
 //!

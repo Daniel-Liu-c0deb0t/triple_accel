@@ -2164,6 +2164,7 @@ impl HammingJewel for Avx {
         for i in 0..refresh_len {
             let mut curr = zeros;
 
+            // compiler should unroll for speed
             for j in (i * 255)..((i + 1) * 255) {
                 let a = _mm256_loadu_si256(avx2_a_ptr.offset(j));
                 let b = _mm256_loadu_si256(avx2_b_ptr.offset(j));
@@ -2212,6 +2213,7 @@ impl HammingJewel for Avx {
         for i in 0..refresh_len {
             let mut curr = zeros;
 
+            // compiler should unroll for speed
             for j in (i * 255)..((i + 1) * 255) {
                 let a = *a.v.get_unchecked(j as usize);
                 let b = _mm256_loadu_si256(avx2_b_ptr.offset(j));
@@ -2320,6 +2322,7 @@ impl HammingJewel for Sse {
         for i in 0..refresh_len {
             let mut curr = zeros;
 
+            // compiler should unroll for speed
             for j in (i * 255)..((i + 1) * 255) {
                 let a = _mm_loadu_si128(sse_a_ptr.offset(j));
                 let b = _mm_loadu_si128(sse_b_ptr.offset(j));
@@ -2367,6 +2370,7 @@ impl HammingJewel for Sse {
         for i in 0..refresh_len {
             let mut curr = zeros;
 
+            // compiler should unroll for speed
             for j in (i * 255)..((i + 1) * 255) {
                 let a = *a.v.get_unchecked(j as usize);
                 let b = _mm_loadu_si128(sse_b_ptr.offset(j));
