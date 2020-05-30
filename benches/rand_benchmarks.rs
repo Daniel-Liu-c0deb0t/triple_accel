@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion, black_box};
+use criterion::{criterion_group, criterion_main, Criterion, black_box, BenchmarkId};
 use rand::prelude::*;
 use triple_accel::*;
 use triple_accel::levenshtein::*;
@@ -6,89 +6,106 @@ use triple_accel::hamming::*;
 
 fn bench_rand_hamming(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1234);
-    let (a_str, b_str) = black_box(rand_hamming_pair(1000, 30, &mut rng));
-
-    let res = hamming_naive(&a_str, &b_str);
-    assert!(res == hamming_words_64(&a_str, &b_str));
-    assert!(res == hamming_words_128(&a_str, &b_str));
-    assert!(res == hamming_simd_movemask(&a_str, &b_str));
-    assert!(res == hamming_simd_parallel(&a_str, &b_str));
-
     let mut group = c.benchmark_group("bench_rand_hamming");
 
-    group.bench_function("hamming_naive", |b| b.iter(|| hamming_naive(&a_str, &b_str)));
-    group.bench_function("hamming_words_64", |b| b.iter(|| hamming_words_64(&a_str, &b_str)));
-    group.bench_function("hamming_words_128", |b| b.iter(|| hamming_words_128(&a_str, &b_str)));
-    group.bench_function("hamming_simd_movemask", |b| b.iter(|| hamming_simd_movemask(&a_str, &b_str)));
-    group.bench_function("hamming_simd_parallel", |b| b.iter(|| hamming_simd_parallel(&a_str, &b_str)));
+    for str_len in [10, 100, 1000, 10000].iter() {
+        let k = black_box(((*str_len) as u32) / 10);
+        let (a_str, b_str) = black_box(rand_hamming_pair(*str_len, k, &mut rng));
+
+        let res = hamming_naive(&a_str, &b_str);
+        assert!(res == hamming_words_64(&a_str, &b_str));
+        assert!(res == hamming_words_128(&a_str, &b_str));
+        assert!(res == hamming_simd_movemask(&a_str, &b_str));
+        assert!(res == hamming_simd_parallel(&a_str, &b_str));
+
+        group.bench_function(BenchmarkId::new("hamming_naive", *str_len), |b| b.iter(|| hamming_naive(&a_str, &b_str)));
+        group.bench_function(BenchmarkId::new("hamming_words_64", *str_len), |b| b.iter(|| hamming_words_64(&a_str, &b_str)));
+        group.bench_function(BenchmarkId::new("hamming_words_128", *str_len), |b| b.iter(|| hamming_words_128(&a_str, &b_str)));
+        group.bench_function(BenchmarkId::new("hamming_simd_movemask", *str_len), |b| b.iter(|| hamming_simd_movemask(&a_str, &b_str)));
+        group.bench_function(BenchmarkId::new("hamming_simd_parallel", *str_len), |b| b.iter(|| hamming_simd_parallel(&a_str, &b_str)));
+    }
 
     group.finish();
 }
 
 fn bench_rand_hamming_search(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1234);
-    let k = black_box(16);
-    let (needle, haystack) = black_box(rand_hamming_needle_haystack(32, 1000, 50, k, &mut rng));
-
-    let res = hamming_search_naive_with_opts(&needle, &haystack, k, SearchType::All);
-    assert!(res == hamming_search_simd_with_opts(&needle, &haystack, k, SearchType::All));
-
     let mut group = c.benchmark_group("bench_rand_hamming_search");
 
-    group.bench_function("hamming_search_naive_k", |b| b.iter(|| hamming_search_naive_with_opts(&needle, &haystack, k, SearchType::All)));
-    group.bench_function("hamming_search_simd_k", |b| b.iter(|| hamming_search_simd_with_opts(&needle, &haystack, k, SearchType::All)));
+    for str_len in [100, 1000, 10000].iter() {
+        let needle_len = black_box(*str_len / 10);
+        let num_needles = black_box(*str_len / 20);
+        let k = black_box(((*str_len) as u32) / 100);
+        let (needle, haystack) = black_box(rand_hamming_needle_haystack(needle_len, *str_len, num_needles, k, &mut rng));
+
+        let res = hamming_search_naive_with_opts(&needle, &haystack, k, SearchType::All);
+        assert!(res == hamming_search_simd_with_opts(&needle, &haystack, k, SearchType::All));
+
+        group.bench_function(BenchmarkId::new("hamming_search_naive_k", *str_len), |b| b.iter(|| hamming_search_naive_with_opts(&needle, &haystack, k, SearchType::All)));
+        group.bench_function(BenchmarkId::new("hamming_search_simd_k", *str_len), |b| b.iter(|| hamming_search_simd_with_opts(&needle, &haystack, k, SearchType::All)));
+    }
 
     group.finish();
 }
 
 fn bench_rand_levenshtein(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1234);
-    let (a_str, b_str) = black_box(rand_levenshtein_pair(1000, 100, &mut rng));
-
-    let res = levenshtein_naive(&a_str, &b_str);
-    assert!(res == levenshtein_exp(&a_str, &b_str));
-    assert!(res == levenshtein(&a_str, &b_str));
-
     let mut group = c.benchmark_group("bench_rand_levenshtein");
 
-    group.bench_function("levenshtein_naive", |b| b.iter(|| levenshtein_naive(&a_str, &b_str)));
-    group.bench_function("levenshtein_exp", |b| b.iter(|| levenshtein_exp(&a_str, &b_str)));
-    group.bench_function("levenshtein", |b| b.iter(|| levenshtein(&a_str, &b_str)));
+    for str_len in [10, 100, 1000].iter() {
+        let k = black_box(((*str_len) as u32) / 10);
+        let (a_str, b_str) = black_box(rand_levenshtein_pair(*str_len, k, &mut rng));
+
+        let res = levenshtein_naive(&a_str, &b_str);
+        assert!(res == levenshtein_exp(&a_str, &b_str));
+        assert!(res == levenshtein(&a_str, &b_str));
+
+        group.bench_function(BenchmarkId::new("levenshtein_naive", *str_len), |b| b.iter(|| levenshtein_naive(&a_str, &b_str)));
+        group.bench_function(BenchmarkId::new("levenshtein_exp", *str_len), |b| b.iter(|| levenshtein_exp(&a_str, &b_str)));
+        group.bench_function(BenchmarkId::new("levenshtein", *str_len), |b| b.iter(|| levenshtein(&a_str, &b_str)));
+    }
 
     group.finish();
 }
 
 fn bench_rand_levenshtein_k(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1234);
-    let k = black_box(30);
-    let trace_on = false;
-    let (a_str, b_str) = black_box(rand_levenshtein_pair(1000, k, &mut rng));
-
-    let res = levenshtein_naive_with_opts(&a_str, &b_str, trace_on, LEVENSHTEIN_COSTS);
-    assert!(res == levenshtein_naive_k_with_opts(&a_str, &b_str, k, trace_on, LEVENSHTEIN_COSTS).unwrap());
-    assert!(res == levenshtein_simd_k_with_opts(&a_str, &b_str, k, trace_on, LEVENSHTEIN_COSTS).unwrap());
-
     let mut group = c.benchmark_group("bench_rand_levenshtein_k");
 
-    group.bench_function("levenshtein_naive", |b| b.iter(|| levenshtein_naive_with_opts(&a_str, &b_str, trace_on, LEVENSHTEIN_COSTS)));
-    group.bench_function("levenshtein_naive_k", |b| b.iter(|| levenshtein_naive_k_with_opts(&a_str, &b_str, k, trace_on, LEVENSHTEIN_COSTS)));
-    group.bench_function("levenshtein_simd_k", |b| b.iter(|| levenshtein_simd_k_with_opts(&a_str, &b_str, k, trace_on, LEVENSHTEIN_COSTS)));
+    for str_len in [10, 100, 1000].iter() {
+        let k = black_box(((*str_len) as u32) / 10);
+        let trace_on = black_box(false);
+        let (a_str, b_str) = black_box(rand_levenshtein_pair(*str_len, k, &mut rng));
+
+        let res = levenshtein_naive_with_opts(&a_str, &b_str, trace_on, LEVENSHTEIN_COSTS);
+        assert!(res == levenshtein_naive_k_with_opts(&a_str, &b_str, k, trace_on, LEVENSHTEIN_COSTS).unwrap());
+        assert!(res == levenshtein_simd_k_with_opts(&a_str, &b_str, k, trace_on, LEVENSHTEIN_COSTS).unwrap());
+
+        group.bench_function(BenchmarkId::new("levenshtein_naive", *str_len), |b| b.iter(|| levenshtein_naive_with_opts(&a_str, &b_str, trace_on, LEVENSHTEIN_COSTS)));
+        group.bench_function(BenchmarkId::new("levenshtein_naive_k", *str_len), |b| b.iter(|| levenshtein_naive_k_with_opts(&a_str, &b_str, k, trace_on, LEVENSHTEIN_COSTS)));
+        group.bench_function(BenchmarkId::new("levenshtein_simd_k", *str_len), |b| b.iter(|| levenshtein_simd_k_with_opts(&a_str, &b_str, k, trace_on, LEVENSHTEIN_COSTS)));
+    }
 
     group.finish();
 }
 
 fn bench_rand_levenshtein_search(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1234);
-    let k = black_box(16);
-    let (needle, haystack) = black_box(rand_levenshtein_needle_haystack(32, 1000, 50, k, &mut rng));
-
-    let res = levenshtein_search_naive_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, false);
-    assert!(res == levenshtein_search_simd_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, false));
-
     let mut group = c.benchmark_group("bench_rand_levenshtein_search");
 
-    group.bench_function("levenshtein_search_naive_k", |b| b.iter(|| levenshtein_search_naive_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, false)));
-    group.bench_function("levenshtein_search_simd_k", |b| b.iter(|| levenshtein_search_simd_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, false)));
+    for str_len in [100, 1000, 10000].iter() {
+        let needle_len = black_box(*str_len / 10);
+        let num_needles = black_box(*str_len / 20);
+        let k = black_box(((*str_len) as u32) / 100);
+        let anchored = black_box(false);
+        let (needle, haystack) = black_box(rand_levenshtein_needle_haystack(needle_len, *str_len, num_needles, k, &mut rng));
+
+        let res = levenshtein_search_naive_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, anchored);
+        assert!(res == levenshtein_search_simd_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, anchored));
+
+        group.bench_function(BenchmarkId::new("levenshtein_search_naive_k", *str_len), |b| b.iter(|| levenshtein_search_naive_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, anchored)));
+        group.bench_function(BenchmarkId::new("levenshtein_search_simd_k", *str_len), |b| b.iter(|| levenshtein_search_simd_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, anchored)));
+    }
 
     group.finish();
 }
