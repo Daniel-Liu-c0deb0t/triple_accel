@@ -3,6 +3,14 @@ name = "triple_accel"
 version = "0.1.0"
 authors = ["c0deb0t <daniel.liu02@gmail.com>"]
 edition = "2018"
+license = "MIT"
+license-file = "LICENSE"
+description = "Rust edit distance routines accelerated using SIMD, with support for Hamming, Levenshtein, etc. distances."
+homepage = "https://github.com/Daniel-Liu-c0deb0t/triple_accel"
+repository = "https://github.com/Daniel-Liu-c0deb0t/triple_accel"
+readme = "README.md"
+keywords = ["SIMD", "levenshtein", "hamming", "string-search", "string-distance"]
+categories = ["algorithms", "hardware-support", "science", "text-processing"]
 
 [features]
 # automatic selection of which type of Jewel vector to use by default
