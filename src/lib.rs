@@ -7,8 +7,10 @@
 //! the difficulty of handling platform-dependent SIMD code makes SIMD routines less attractive.
 //! The goal of this library is to provide an easy-to-use abstraction over SIMD edit distance routines
 //! that fall back to scalar routines if the target CPU architecture is not supported.
-//! Additionally, all limitations and tradeoffs of edit distance routines should be provided upfront
+//! Additionally, all limitations and tradeoffs of the edit distance routines should be provided upfront
 //! so the user knows exactly what to expect.
+//! Finally, this library should lead to performance boosts on both short and longer strings, so it
+//! can be used for a variety of tasks, from bioinformatics to natural language processing.
 //! `triple_accel` is very lightweight: it only has dependencies on other crates for benchmarking.
 //! It can be built on machines without CPUs that have AVX2 or SSE4.1 support. It can also run on
 //! machines without SIMD support by automatically using scalar alternatives.
