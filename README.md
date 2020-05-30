@@ -32,13 +32,13 @@ You can run tests with
 ```
 cargo test
 ```
-After cloning the library.
+after cloning the repository.
 
 Continuous integration is used to ensure that the code passes all tests on the latest Linux, Windows,
 and Mac platforms. Additionally, crate feature flags like `jewel-sse`, `jewel-avx`, `jewel-8bit`,
 `jewel-16bit`, and `jewel-32-bit` are used to override the default automatic detection of CPU features,
-so all features can be thoroughly tested. For debug builds, the exact underlying vector type used is
-automatically printed.
+so all features can be thoroughly tested in continuous integration. For debug builds, the exact
+underlying vector type used is automatically printed.
 
 ## Benchmarks
 Benchmarks can be ran with
@@ -147,6 +147,8 @@ have to be used directly.
 [MIT](LICENSE)
 
 ## Contributing
+Contributions are welcome!
+
 * Open an issue for questions or bug reports.
 * Make sure all tests pass for pull requests. Note that both the SIMD and scalar variants of the code
 should return the same result. Remember to add tests for new features!
@@ -160,4 +162,4 @@ Read the code of conduct [here](CODE_OF_CONDUCT.md).
 
 ## Why the name "triple_accel"?
 Because "Time Altar - Triple Accel" is a magical ability used by Kiritsugu Emiya to boost his speed
-and reaction time in Fate/Zero.
+and reaction time in Fate/Zero. There are also some other references to the Fate series...
