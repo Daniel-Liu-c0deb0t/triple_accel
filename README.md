@@ -37,7 +37,7 @@ after cloning the repository.
 
 Continuous integration is used to ensure that the code passes all tests on the latest Linux, Windows,
 and Mac platforms. Additionally, crate feature flags like `jewel-sse`, `jewel-avx`, `jewel-8bit`,
-`jewel-16bit`, and `jewel-32-bit` are used to override the default automatic detection of CPU features,
+`jewel-16bit`, and `jewel-32bit` are used to override the default automatic detection of CPU features,
 so all features can be thoroughly tested in continuous integration. For debug builds, the exact
 underlying vector type used is automatically printed.
 
