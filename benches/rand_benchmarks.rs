@@ -93,7 +93,7 @@ fn bench_rand_levenshtein_search(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1234);
     let mut group = c.benchmark_group("bench_rand_levenshtein_search");
 
-    for str_len in [100, 1000, 10000].iter() {
+    for str_len in [100, 1000].iter() {
         let needle_len = black_box(*str_len / 10);
         let num_needles = black_box(*str_len / 20);
         let k = black_box(((*str_len) as u32) / 100);
