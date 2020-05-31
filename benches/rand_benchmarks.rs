@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion, black_box, BenchmarkId};
+use criterion::*;
 use rand::prelude::*;
 use triple_accel::*;
 use triple_accel::levenshtein::*;
@@ -7,6 +7,8 @@ use triple_accel::hamming::*;
 fn bench_rand_hamming(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1234);
     let mut group = c.benchmark_group("bench_rand_hamming");
+    let config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
+    group.plot_config(config);
 
     for str_len in [10, 100, 1000, 10000].iter() {
         let k = black_box(((*str_len) as u32) / 10);
@@ -31,6 +33,8 @@ fn bench_rand_hamming(c: &mut Criterion) {
 fn bench_rand_hamming_search(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1234);
     let mut group = c.benchmark_group("bench_rand_hamming_search");
+    let config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
+    group.plot_config(config);
 
     for str_len in [100, 1000, 10000].iter() {
         let needle_len = black_box(*str_len / 10);
@@ -51,6 +55,8 @@ fn bench_rand_hamming_search(c: &mut Criterion) {
 fn bench_rand_levenshtein(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1234);
     let mut group = c.benchmark_group("bench_rand_levenshtein");
+    let config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
+    group.plot_config(config);
 
     for str_len in [10, 100, 1000].iter() {
         let k = black_box(((*str_len) as u32) / 10);
@@ -71,6 +77,8 @@ fn bench_rand_levenshtein(c: &mut Criterion) {
 fn bench_rand_levenshtein_k(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1234);
     let mut group = c.benchmark_group("bench_rand_levenshtein_k");
+    let config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
+    group.plot_config(config);
 
     for str_len in [10, 100, 1000].iter() {
         let k = black_box(((*str_len) as u32) / 10);
@@ -92,6 +100,8 @@ fn bench_rand_levenshtein_k(c: &mut Criterion) {
 fn bench_rand_levenshtein_search(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(1234);
     let mut group = c.benchmark_group("bench_rand_levenshtein_search");
+    let config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
+    group.plot_config(config);
 
     for str_len in [100, 1000].iter() {
         let needle_len = black_box(*str_len / 10);
