@@ -36,7 +36,7 @@ fn bench_rand_hamming_search(c: &mut Criterion) {
     let config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
     group.plot_config(config);
 
-    for str_len in [100, 1000].iter() {
+    for str_len in [100, 400, 1600].iter() {
         let needle_len = black_box(*str_len / 10);
         let num_needles = black_box(*str_len / 20);
         let k = black_box(((*str_len) as u32) / 100);
@@ -103,7 +103,7 @@ fn bench_rand_levenshtein_search(c: &mut Criterion) {
     let config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
     group.plot_config(config);
 
-    for str_len in [100, 1000].iter() {
+    for str_len in [100, 400, 1600].iter() {
         let needle_len = black_box(*str_len / 10);
         let num_needles = black_box(*str_len / 20);
         let k = black_box(((*str_len) as u32) / 100);
