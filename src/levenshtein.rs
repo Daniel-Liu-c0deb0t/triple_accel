@@ -22,6 +22,7 @@ use super::jewel::*;
 pub struct EditCosts {
     mismatch_cost: u8,
     gap_cost: u8,
+    start_gap_cost: u8,
     transpose_cost: Option<u8>
 }
 
@@ -33,7 +34,7 @@ impl EditCosts {
     /// * `gap_cost` - cost of a gap, which must be positive
     /// * `transpose_cost` - cost of a transpose, which must be cheaper than doing the equivalent
     /// operation with mismatches and gaps
-    pub fn new(mismatch_cost: u8, gap_cost: u8, transpose_cost: Option<u8>) -> Self {
+    pub fn new(mismatch_cost: u8, gap_cost: u8, start_gap_cost: u8, transpose_cost: Option<u8>) -> Self {
         assert!(mismatch_cost > 0);
         assert!(gap_cost > 0);
 
@@ -47,6 +48,7 @@ impl EditCosts {
         Self{
             mismatch_cost: mismatch_cost,
             gap_cost: gap_cost,
+            start_gap_cost: start_gap_cost,
             transpose_cost: transpose_cost
         }
     }
@@ -65,10 +67,10 @@ impl EditCosts {
 
 /// Costs for Levenshtein distance, where mismatches and gaps both have a cost of 1, and
 /// transpositions are not allowed.
-pub const LEVENSHTEIN_COSTS: EditCosts = EditCosts{mismatch_cost: 1, gap_cost: 1, transpose_cost: None};
+pub const LEVENSHTEIN_COSTS: EditCosts = EditCosts{mismatch_cost: 1, gap_cost: 1, start_gap_cost: 0, transpose_cost: None};
 /// Costs for restricted Damerau-Levenshtein distance, where mismatches, gaps, and transpositions
 /// all have a cost of 1.
-pub const RDAMERAU_COSTS: EditCosts = EditCosts{mismatch_cost: 1, gap_cost: 1, transpose_cost: Some(1)};
+pub const RDAMERAU_COSTS: EditCosts = EditCosts{mismatch_cost: 1, gap_cost: 1, start_gap_cost: 0, transpose_cost: Some(1)};
 
 /// Returns the Levenshtein distance between two strings using the naive scalar algorithm.
 ///
@@ -602,6 +604,10 @@ macro_rules! create_levenshtein_simd_core {
             let mut dp_temp = <$jewel>::repeating_max(max_len);
             // dp0 -> dp_temp -> dp1 -> dp2 -> current diagonal
 
+            // dp for whether to extend gap or start new gap
+            let mut a_gap_dp = <$jewel>::repeating_max(max_len);
+            let mut b_gap_dp = <$jewel>::repeating_max(max_len);
+
             // lengths of the (anti) diagonals
             // assumes max_len is even
             let k1 = max_len - 1;
@@ -671,6 +677,7 @@ macro_rules! create_levenshtein_simd_core {
 
             let mismatch_cost = <$jewel>::repeating(costs.mismatch_cost as u32, max_len);
             let gap_cost = <$jewel>::repeating(costs.gap_cost as u32, max_len);
+            let start_gap_cost = <$jewel>::repeating(costs.start_gap_cost as u32 + costs.gap_cost as u32, max_len);
             let transpose_cost = match costs.transpose_cost {
                 Some(cost) => <$jewel>::repeating(cost as u32, max_len),
                 None => <$jewel>::repeating(0, max_len) // value does not matter
@@ -761,14 +768,22 @@ macro_rules! create_levenshtein_simd_core {
                 <$jewel>::andnot(&match_mask1, &mismatch_cost, &mut sub);
                 sub.adds_mut(&dp1);
                 // cost of gaps in a
-                <$jewel>::shift_right_1(&dp2, &mut a_gap);
-                a_gap.insert_first_max();
-                a_gap.adds_mut(&gap_cost);
+                // start new gap
+                <$jewel>::adds(&dp2, &start_gap_cost, &mut a_gap);
+                // continue gap
+                a_gap_dp.adds_mut(&gap_cost);
+                a_gap_dp.min_mut(&a_gap);
+                a_gap_dp.shift_right_1_mut();
+                a_gap_dp.insert_first_max();
                 // cost of gaps in b
-                <$jewel>::adds(&dp2, &gap_cost, &mut b_gap);
+                // start new gap
+                <$jewel>::adds(&dp2, &start_gap_cost, &mut b_gap);
+                // continue gap
+                b_gap_dp.adds_mut(&gap_cost);
+                b_gap_dp.min_mut(&b_gap);
 
                 if allow_transpose {
-                    <$jewel>::shift_right_1(&match_mask0, &mut transpose); // reuse transpose
+                    <$jewel>::shift_right_1(&match_mask0, &mut transpose); // reuse transpose, zeros shifted in
                     transpose.and_mut(&match_mask0);
                     // make sure that current matching locations are excluded
                     <$jewel>::andnot(&match_mask1, &transpose, &mut match_mask0); // reuse match_mask0 to represent transpose mask
@@ -777,7 +792,7 @@ macro_rules! create_levenshtein_simd_core {
 
                 // min of the cost of all three edit operations
                 if trace_on {
-                    let mut args = <$jewel>::triple_argmin(&sub, &a_gap, &b_gap, &mut dp0);
+                    let mut args = <$jewel>::triple_argmin(&sub, &a_gap_dp, &b_gap_dp, &mut dp0);
 
                     if allow_transpose {
                         // blend using transpose mask
@@ -788,7 +803,7 @@ macro_rules! create_levenshtein_simd_core {
 
                     traceback_arr.push(args);
                 }else{
-                    <$jewel>::min(&a_gap, &b_gap, &mut dp0);
+                    <$jewel>::min(&a_gap_dp, &b_gap_dp, &mut dp0);
                     dp0.min_mut(&sub);
 
                     if allow_transpose {
@@ -807,14 +822,22 @@ macro_rules! create_levenshtein_simd_core {
                 <$jewel>::andnot(&match_mask1, &mismatch_cost, &mut sub);
                 sub.adds_mut(&dp1);
                 // cost of gaps in b
-                <$jewel>::shift_left_1(&dp2, &mut b_gap);
-                b_gap.insert_last_max(); // k1, shift in max value
-                b_gap.adds_mut(&gap_cost);
+                // start new gap
+                <$jewel>::adds(&dp2, &start_gap_cost, &mut b_gap);
+                // continue gap
+                b_gap_dp.adds_mut(&gap_cost);
+                b_gap_dp.min_mut(&b_gap);
+                b_gap_dp.shift_left_1_mut();
+                b_gap_dp.insert_last_max(); // k1, shift in max value
                 // cost of gaps in a
-                <$jewel>::adds(&dp2, &gap_cost, &mut a_gap);
+                // start new gap
+                <$jewel>::adds(&dp2, &start_gap_cost, &mut a_gap);
+                a_gap_dp.adds_mut(&gap_cost);
+                // continue gap
+                a_gap_dp.min_mut(&a_gap);
 
                 if allow_transpose {
-                    <$jewel>::shift_left_1(&match_mask0, &mut transpose); // reuse transpose
+                    <$jewel>::shift_left_1(&match_mask0, &mut transpose); // reuse transpose, zeros shifted in
                     transpose.and_mut(&match_mask0);
                     // make sure that current matching locations are excluded
                     <$jewel>::andnot(&match_mask1, &transpose, &mut match_mask0); // reuse match_mask0 to represent transpose mask
@@ -823,7 +846,7 @@ macro_rules! create_levenshtein_simd_core {
 
                 // min of the cost of all three edit operations
                 if trace_on {
-                    let mut args = <$jewel>::triple_argmin(&sub, &a_gap, &b_gap, &mut dp0);
+                    let mut args = <$jewel>::triple_argmin(&sub, &a_gap_dp, &b_gap_dp, &mut dp0);
 
                     if allow_transpose {
                         // blend using transpose mask
@@ -834,7 +857,7 @@ macro_rules! create_levenshtein_simd_core {
 
                     traceback_arr.push(args);
                 }else{
-                    <$jewel>::min(&a_gap, &b_gap, &mut dp0);
+                    <$jewel>::min(&a_gap_dp, &b_gap_dp, &mut dp0);
                     dp0.min_mut(&sub);
 
                     if allow_transpose {
