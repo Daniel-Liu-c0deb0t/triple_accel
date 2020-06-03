@@ -65,6 +65,7 @@ pub trait Jewel: fmt::Display {
     unsafe fn triple_argmin(sub: &Self, a_gap: &Self, b_gap: &Self, res_min: &mut Self) -> Self;
     unsafe fn triple_min_length(sub: &Self, a_gap: &Self, b_gap: &Self, sub_length: &Self,
                                 a_gap_length: &Self, b_gap_length: &Self, res_min: &mut Self, res_length: &mut Self);
+    unsafe fn double_min_length(new_gap: &Self, res_cont_gap: &mut Self, new_gap_length: &Self, res_cont_gap_length: &mut Self);
 }
 
 // macros to help generate implementations for some of the Jewel vector functions
@@ -389,6 +390,29 @@ macro_rules! create_avx_nx32x8 {
 
                     *res_min.v.get_unchecked_mut(i) = res_min2;
                     *res_length.v.get_unchecked_mut(i) = res_length2;
+                }
+            }
+
+            #[target_feature(enable = "avx2")]
+            #[inline]
+            unsafe fn double_min_length(new_gap: &Self, res_cont_gap: &mut Self, new_gap_length: &Self, res_cont_gap_length: &mut Self) {
+                // choose the length based on which gap type is chosen during the min operation
+                // secondary objective of maximizing length if edit costs equal
+                for i in 0..new_gap.v.len() {
+                    let new_gap = *new_gap.v.get_unchecked(i);
+                    let cont_gap = *res_cont_gap.v.get_unchecked(i);
+                    let new_gap_length = *new_gap_length.v.get_unchecked(i);
+                    let cont_gap_length = *res_cont_gap_length.v.get_unchecked(i);
+
+                    let res_min = _mm256_min_epu8(new_gap, cont_gap);
+                    let new_cont_gt_mask = _mm256_cmpeq_epi8(new_gap, res_min); // new gap: -1, continue gap: 0
+                    let mut res_length = _mm256_blendv_epi8(cont_gap_length, new_gap_length, new_cont_gt_mask); // lengths based on edits
+                    let new_cont_eq_mask = _mm256_cmpeq_epi8(new_gap, cont_gap); // equal: -1
+                    let new_cont_max_len = _mm256_max_epu8(new_gap_length, cont_gap_length);
+                    res_length = _mm256_blendv_epi8(res_length, new_cont_max_len, new_cont_eq_mask); // maximize length if edits equal
+
+                    *res_cont_gap.v.get_unchecked_mut(i) = res_min;
+                    *res_cont_gap_length.v.get_unchecked_mut(i) = res_length;
                 }
             }
         }
@@ -733,6 +757,29 @@ impl Jewel for AvxNx16x16 {
 
             *res_min.v.get_unchecked_mut(i) = res_min2;
             *res_length.v.get_unchecked_mut(i) = res_length2;
+        }
+    }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn double_min_length(new_gap: &Self, res_cont_gap: &mut Self, new_gap_length: &Self, res_cont_gap_length: &mut Self) {
+        // choose the length based on which gap type is chosen during the min operation
+        // secondary objective of maximizing length if edit costs equal
+        for i in 0..new_gap.v.len() {
+            let new_gap = *new_gap.v.get_unchecked(i);
+            let cont_gap = *res_cont_gap.v.get_unchecked(i);
+            let new_gap_length = *new_gap_length.v.get_unchecked(i);
+            let cont_gap_length = *res_cont_gap_length.v.get_unchecked(i);
+
+            let res_min = _mm256_min_epu16(new_gap, cont_gap);
+            let new_cont_gt_mask = _mm256_cmpeq_epi16(new_gap, res_min); // new gap: -1, continue gap: 0
+            let mut res_length = _mm256_blendv_epi8(cont_gap_length, new_gap_length, new_cont_gt_mask); // lengths based on edits
+            let new_cont_eq_mask = _mm256_cmpeq_epi16(new_gap, cont_gap); // equal: -1
+            let new_cont_max_len = _mm256_max_epu16(new_gap_length, cont_gap_length);
+            res_length = _mm256_blendv_epi8(res_length, new_cont_max_len, new_cont_eq_mask); // maximize length if edits equal
+
+            *res_cont_gap.v.get_unchecked_mut(i) = res_min;
+            *res_cont_gap_length.v.get_unchecked_mut(i) = res_length;
         }
     }
 }
@@ -1084,6 +1131,29 @@ impl Jewel for AvxNx8x32 {
             *res_length.v.get_unchecked_mut(i) = res_length2;
         }
     }
+
+    #[target_feature(enable = "avx2")]
+    #[inline]
+    unsafe fn double_min_length(new_gap: &Self, res_cont_gap: &mut Self, new_gap_length: &Self, res_cont_gap_length: &mut Self) {
+        // choose the length based on which gap type is chosen during the min operation
+        // secondary objective of maximizing length if edit costs equal
+        for i in 0..new_gap.v.len() {
+            let new_gap = *new_gap.v.get_unchecked(i);
+            let cont_gap = *res_cont_gap.v.get_unchecked(i);
+            let new_gap_length = *new_gap_length.v.get_unchecked(i);
+            let cont_gap_length = *res_cont_gap_length.v.get_unchecked(i);
+
+            let res_min = _mm256_min_epu32(new_gap, cont_gap);
+            let new_cont_gt_mask = _mm256_cmpeq_epi32(new_gap, res_min); // new gap: -1, continue gap: 0
+            let mut res_length = _mm256_blendv_epi8(cont_gap_length, new_gap_length, new_cont_gt_mask); // lengths based on edits
+            let new_cont_eq_mask = _mm256_cmpeq_epi32(new_gap, cont_gap); // equal: -1
+            let new_cont_max_len = _mm256_max_epu32(new_gap_length, cont_gap_length);
+            res_length = _mm256_blendv_epi8(res_length, new_cont_max_len, new_cont_eq_mask); // maximize length if edits equal
+
+            *res_cont_gap.v.get_unchecked_mut(i) = res_min;
+            *res_cont_gap_length.v.get_unchecked_mut(i) = res_length;
+        }
+    }
 }
 
 // this implementation will probably only be used for debugging
@@ -1395,6 +1465,29 @@ macro_rules! create_sse_nx16x8 {
 
                     *res_min.v.get_unchecked_mut(i) = res_min2;
                     *res_length.v.get_unchecked_mut(i) = res_length2;
+                }
+            }
+
+            #[target_feature(enable = "sse4.1")]
+            #[inline]
+            unsafe fn double_min_length(new_gap: &Self, res_cont_gap: &mut Self, new_gap_length: &Self, res_cont_gap_length: &mut Self) {
+                // choose the length based on which gap type is chosen during the min operation
+                // secondary objective of maximizing length if edit costs equal
+                for i in 0..new_gap.v.len() {
+                    let new_gap = *new_gap.v.get_unchecked(i);
+                    let cont_gap = *res_cont_gap.v.get_unchecked(i);
+                    let new_gap_length = *new_gap_length.v.get_unchecked(i);
+                    let cont_gap_length = *res_cont_gap_length.v.get_unchecked(i);
+
+                    let res_min = _mm_min_epu8(new_gap, cont_gap);
+                    let new_cont_gt_mask = _mm_cmpeq_epi8(new_gap, res_min); // new gap: -1, continue gap: 0
+                    let mut res_length = _mm_blendv_epi8(cont_gap_length, new_gap_length, new_cont_gt_mask); // lengths based on edits
+                    let new_cont_eq_mask = _mm_cmpeq_epi8(new_gap, cont_gap); // equal: -1
+                    let new_cont_max_len = _mm_max_epu8(new_gap_length, cont_gap_length);
+                    res_length = _mm_blendv_epi8(res_length, new_cont_max_len, new_cont_eq_mask); // maximize length if edits equal
+
+                    *res_cont_gap.v.get_unchecked_mut(i) = res_min;
+                    *res_cont_gap_length.v.get_unchecked_mut(i) = res_length;
                 }
             }
         }
@@ -1715,6 +1808,29 @@ impl Jewel for SseNx8x16 {
 
             *res_min.v.get_unchecked_mut(i) = res_min2;
             *res_length.v.get_unchecked_mut(i) = res_length2;
+        }
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn double_min_length(new_gap: &Self, res_cont_gap: &mut Self, new_gap_length: &Self, res_cont_gap_length: &mut Self) {
+        // choose the length based on which gap type is chosen during the min operation
+        // secondary objective of maximizing length if edit costs equal
+        for i in 0..new_gap.v.len() {
+            let new_gap = *new_gap.v.get_unchecked(i);
+            let cont_gap = *res_cont_gap.v.get_unchecked(i);
+            let new_gap_length = *new_gap_length.v.get_unchecked(i);
+            let cont_gap_length = *res_cont_gap_length.v.get_unchecked(i);
+
+            let res_min = _mm_min_epu16(new_gap, cont_gap);
+            let new_cont_gt_mask = _mm_cmpeq_epi16(new_gap, res_min); // new gap: -1, continue gap: 0
+            let mut res_length = _mm_blendv_epi8(cont_gap_length, new_gap_length, new_cont_gt_mask); // lengths based on edits
+            let new_cont_eq_mask = _mm_cmpeq_epi16(new_gap, cont_gap); // equal: -1
+            let new_cont_max_len = _mm_max_epu16(new_gap_length, cont_gap_length);
+            res_length = _mm_blendv_epi8(res_length, new_cont_max_len, new_cont_eq_mask); // maximize length if edits equal
+
+            *res_cont_gap.v.get_unchecked_mut(i) = res_min;
+            *res_cont_gap_length.v.get_unchecked_mut(i) = res_length;
         }
     }
 }
@@ -2039,6 +2155,29 @@ impl Jewel for SseNx4x32 {
 
             *res_min.v.get_unchecked_mut(i) = res_min2;
             *res_length.v.get_unchecked_mut(i) = res_length2;
+        }
+    }
+
+    #[target_feature(enable = "sse4.1")]
+    #[inline]
+    unsafe fn double_min_length(new_gap: &Self, res_cont_gap: &mut Self, new_gap_length: &Self, res_cont_gap_length: &mut Self) {
+        // choose the length based on which gap type is chosen during the min operation
+        // secondary objective of maximizing length if edit costs equal
+        for i in 0..new_gap.v.len() {
+            let new_gap = *new_gap.v.get_unchecked(i);
+            let cont_gap = *res_cont_gap.v.get_unchecked(i);
+            let new_gap_length = *new_gap_length.v.get_unchecked(i);
+            let cont_gap_length = *res_cont_gap_length.v.get_unchecked(i);
+
+            let res_min = _mm_min_epu32(new_gap, cont_gap);
+            let new_cont_gt_mask = _mm_cmpeq_epi32(new_gap, res_min); // new gap: -1, continue gap: 0
+            let mut res_length = _mm_blendv_epi8(cont_gap_length, new_gap_length, new_cont_gt_mask); // lengths based on edits
+            let new_cont_eq_mask = _mm_cmpeq_epi32(new_gap, cont_gap); // equal: -1
+            let new_cont_max_len = _mm_max_epu32(new_gap_length, cont_gap_length);
+            res_length = _mm_blendv_epi8(res_length, new_cont_max_len, new_cont_eq_mask); // maximize length if edits equal
+
+            *res_cont_gap.v.get_unchecked_mut(i) = res_min;
+            *res_cont_gap_length.v.get_unchecked_mut(i) = res_length;
         }
     }
 }

@@ -126,22 +126,22 @@ fn test_basic_levenshtein_naive() {
 
     let a6 = b"abcde";
     let b6 = b"acbde";
-    res = levenshtein_naive_with_opts(a6, b6, false, EditCosts::new(1, 1, Some(1))).0;
+    res = levenshtein_naive_with_opts(a6, b6, false, EditCosts::new(1, 1, 0, Some(1))).0;
     assert!(res == 1);
 
     let a7 = b"ab";
     let b7 = b"ba";
-    res = levenshtein_naive_with_opts(a7, b7, false, EditCosts::new(1, 1, Some(1))).0;
+    res = levenshtein_naive_with_opts(a7, b7, false, EditCosts::new(1, 1, 0, Some(1))).0;
     assert!(res == 1);
 
     let a8 = b"abc";
     let b8 = b"aac";
-    res = levenshtein_naive_with_opts(a8, b8, false, EditCosts::new(2, 3, None)).0;
+    res = levenshtein_naive_with_opts(a8, b8, false, EditCosts::new(2, 3, 0, None)).0;
     assert!(res == 2);
 
     let a9 = b"abc";
     let b9 = b"aac";
-    res = levenshtein_naive_with_opts(a9, b9, false, EditCosts::new(3, 1, None)).0;
+    res = levenshtein_naive_with_opts(a9, b9, false, EditCosts::new(3, 1, 0, None)).0;
     assert!(res == 2);
 }
 
@@ -172,7 +172,7 @@ fn test_trace_on_levenshtein_naive() {
 
     let a4 = b"abcde";
     let b4 = b"acbde";
-    res = levenshtein_naive_with_opts(a4, b4, true, EditCosts::new(1, 1, Some(1)));
+    res = levenshtein_naive_with_opts(a4, b4, true, EditCosts::new(1, 1, 0, Some(1)));
     assert!(res.0 == 1);
     assert!(res.1.unwrap() == vec![Edit{edit: EditType::Match, count: 1},
                                    Edit{edit: EditType::Transpose, count: 1},
@@ -331,25 +331,25 @@ fn test_basic_levenshtein_naive_k_with_opts() {
 
     let a7 = b"abcde";
     let b7 = b"acbde";
-    res = levenshtein_naive_k_with_opts(a7, b7, 1, false, EditCosts::new(1, 1, Some(1))).unwrap();
+    res = levenshtein_naive_k_with_opts(a7, b7, 1, false, EditCosts::new(1, 1, 0, Some(1))).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.is_none());
 
     let a8 = b"ab";
     let b8 = b"ba";
-    res = levenshtein_naive_k_with_opts(a8, b8, 1, false, EditCosts::new(1, 1, Some(1))).unwrap();
+    res = levenshtein_naive_k_with_opts(a8, b8, 1, false, EditCosts::new(1, 1, 0, Some(1))).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.is_none());
 
     let a9 = b"abc";
     let b9 = b"aac";
-    res = levenshtein_naive_k_with_opts(a9, b9, 5, false, EditCosts::new(2, 3, None)).unwrap();
+    res = levenshtein_naive_k_with_opts(a9, b9, 5, false, EditCosts::new(2, 3, 0, None)).unwrap();
     assert!(res.0 == 2);
     assert!(res.1.is_none());
 
     let a10 = b"abc";
     let b10 = b"aac";
-    res = levenshtein_naive_k_with_opts(a10, b10, 5, false, EditCosts::new(3, 1, None)).unwrap();
+    res = levenshtein_naive_k_with_opts(a10, b10, 5, false, EditCosts::new(3, 1, 0, None)).unwrap();
     assert!(res.0 == 2);
     assert!(res.1.is_none());
 }
@@ -381,7 +381,7 @@ fn test_trace_on_levenshtein_naive_k_with_opts() {
 
     let a4 = b"abcde";
     let b4 = b"acbde";
-    res = levenshtein_naive_k_with_opts(a4, b4, 2, true, EditCosts::new(1, 1, Some(1))).unwrap();
+    res = levenshtein_naive_k_with_opts(a4, b4, 2, true, EditCosts::new(1, 1, 0, Some(1))).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.unwrap() == vec![Edit{edit: EditType::Match, count: 1},
                                    Edit{edit: EditType::Transpose, count: 1},
@@ -422,25 +422,25 @@ fn test_basic_levenshtein_simd_k_with_opts() {
 
     let a6 = b"abcde";
     let b6 = b"acbde";
-    res = levenshtein_simd_k_with_opts(a6, b6, 2, false, EditCosts::new(1, 1, Some(1))).unwrap();
+    res = levenshtein_simd_k_with_opts(a6, b6, 2, false, EditCosts::new(1, 1, 0, Some(1))).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.is_none());
 
     let a7 = b"ab";
     let b7 = b"ba";
-    res = levenshtein_simd_k_with_opts(a7, b7, 2, false, EditCosts::new(1, 1, Some(1))).unwrap();
+    res = levenshtein_simd_k_with_opts(a7, b7, 2, false, EditCosts::new(1, 1, 0, Some(1))).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.is_none());
 
     let a8 = b"abc";
     let b8 = b"aac";
-    res = levenshtein_simd_k_with_opts(a8, b8, 5, false, EditCosts::new(2, 3, None)).unwrap();
+    res = levenshtein_simd_k_with_opts(a8, b8, 5, false, EditCosts::new(2, 3, 0, None)).unwrap();
     assert!(res.0 == 2);
     assert!(res.1.is_none());
 
     let a9 = b"abc";
     let b9 = b"aac";
-    res = levenshtein_simd_k_with_opts(a9, b9, 5, false, EditCosts::new(3, 1, None)).unwrap();
+    res = levenshtein_simd_k_with_opts(a9, b9, 5, false, EditCosts::new(3, 1, 0, None)).unwrap();
     assert!(res.0 == 2);
     assert!(res.1.is_none());
 }
@@ -472,7 +472,7 @@ fn test_trace_on_levenshtein_simd_k_with_opts() {
 
     let a4 = b"abcde";
     let b4 = b"acbde";
-    res = levenshtein_simd_k_with_opts(a4, b4, 2, true, EditCosts::new(1, 1, Some(1))).unwrap();
+    res = levenshtein_simd_k_with_opts(a4, b4, 2, true, EditCosts::new(1, 1, 0, Some(1))).unwrap();
     assert!(res.0 == 1);
     assert!(res.1.unwrap() == vec![Edit{edit: EditType::Match, count: 1},
                                    Edit{edit: EditType::Transpose, count: 1},
@@ -513,19 +513,19 @@ fn test_basic_levenshtein_search_naive() {
     let a6 = b"ab";
     let b6 = b"ba";
     let k6 = 1;
-    res = levenshtein_search_naive_with_opts(a6, b6, k6, SearchType::All, EditCosts::new(1, 1, Some(1)), false);
+    res = levenshtein_search_naive_with_opts(a6, b6, k6, SearchType::All, EditCosts::new(1, 1, 0, Some(1)), false);
     assert!(res == vec![Match{start: 0, end: 1, k: 1}, Match{start: 0, end: 2, k: 1}]);
 
     let a7 = b"test";
     let b7 = b"...tseting!";
     let k7 = 1;
-    res = levenshtein_search_naive_with_opts(a7, b7, k7, SearchType::All, EditCosts::new(1, 1, Some(1)), false);
+    res = levenshtein_search_naive_with_opts(a7, b7, k7, SearchType::All, EditCosts::new(1, 1, 0, Some(1)), false);
     assert!(res == vec![Match{start: 3, end: 7, k: 1}]);
 
     let a8 = b"test";
     let b8 = b"...tssting!";
     let k8 = 2;
-    res = levenshtein_search_naive_with_opts(a8, b8, k8, SearchType::All, EditCosts::new(3, 1, None), false);
+    res = levenshtein_search_naive_with_opts(a8, b8, k8, SearchType::All, EditCosts::new(3, 1, 0, None), false);
     assert!(res == vec![Match{start: 3, end: 5, k: 2}, Match{start: 3, end: 7, k: 2}]);
 
     let a9 = b"tst";
@@ -587,19 +587,19 @@ fn test_basic_levenshtein_search_simd() {
     let a6 = b"ab";
     let b6 = b"ba";
     let k6 = 1;
-    res = levenshtein_search_simd_with_opts(a6, b6, k6, SearchType::All, EditCosts::new(1, 1, Some(1)), false);
+    res = levenshtein_search_simd_with_opts(a6, b6, k6, SearchType::All, EditCosts::new(1, 1, 0, Some(1)), false);
     assert!(res == vec![Match{start: 0, end: 1, k: 1}, Match{start: 0, end: 2, k: 1}]);
 
     let a7 = b"test";
     let b7 = b"...tseting!";
     let k7 = 1;
-    res = levenshtein_search_simd_with_opts(a7, b7, k7, SearchType::All, EditCosts::new(1, 1, Some(1)), false);
+    res = levenshtein_search_simd_with_opts(a7, b7, k7, SearchType::All, EditCosts::new(1, 1, 0, Some(1)), false);
     assert!(res == vec![Match{start: 3, end: 7, k: 1}]);
 
     let a8 = b"test";
     let b8 = b"...tssting!";
     let k8 = 2;
-    res = levenshtein_search_simd_with_opts(a8, b8, k8, SearchType::All, EditCosts::new(3, 1, None), false);
+    res = levenshtein_search_simd_with_opts(a8, b8, k8, SearchType::All, EditCosts::new(3, 1, 0, None), false);
     assert!(res == vec![Match{start: 3, end: 5, k: 2}, Match{start: 3, end: 7, k: 2}]);
 
     let a9 = b"tst";

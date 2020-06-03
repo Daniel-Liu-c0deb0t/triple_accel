@@ -116,6 +116,7 @@ pub fn levenshtein_naive_with_opts(a: &[u8], b: &[u8], trace_on: bool, costs: Ed
     let b_new_len = b_new.len();
     let mismatch_cost = costs.mismatch_cost as u32;
     let gap_cost = costs.gap_cost as u32;
+    let start_gap_cost = costs.start_gap_cost as u32;
     let transpose_cost = match costs.transpose_cost {
         Some(cost) => cost as u32,
         None => 0
@@ -126,10 +127,12 @@ pub fn levenshtein_naive_with_opts(a: &[u8], b: &[u8], trace_on: bool, costs: Ed
     let mut dp0 = vec![0u32; len];
     let mut dp1 = vec![0u32; len]; // in each iteration, dp0 and dp1 are already calculated
     let mut dp2 = vec![0u32; len]; // dp2 the currently calculated column
+    let mut a_gap_dp = vec![u32::MAX; len];
+    let mut b_gap_dp = vec![u32::MAX; len];
     let mut traceback = if trace_on {vec![0u8; (b_new_len + 1) * len]} else {vec![]};
 
     for i in 0..len {
-        dp1[i] = (i as u32) * gap_cost;
+        dp1[i] = (i as u32) * gap_cost + if i == 0 {0} else {start_gap_cost};
 
         if trace_on {
             traceback[0 * len + i] = 2u8;
@@ -137,7 +140,8 @@ pub fn levenshtein_naive_with_opts(a: &[u8], b: &[u8], trace_on: bool, costs: Ed
     }
 
     for i in 1..(b_new_len + 1) {
-        dp2[0] = (i as u32) * gap_cost;
+        a_gap_dp[0] = (i as u32) * gap_cost + start_gap_cost;
+        dp2[0] = (i as u32) * gap_cost + start_gap_cost;
 
         if trace_on {
             traceback[i * len + 0] = 1u8;
@@ -145,18 +149,18 @@ pub fn levenshtein_naive_with_opts(a: &[u8], b: &[u8], trace_on: bool, costs: Ed
 
         for j in 1..len {
             let sub = dp1[j - 1] + ((a_new[j - 1] != b_new[i - 1]) as u32) * mismatch_cost;
-            let a_gap = dp1[j] + gap_cost;
-            let b_gap = dp2[j - 1] + gap_cost;
+            a_gap_dp[j] = cmp::min(dp1[j] + start_gap_cost + gap_cost, a_gap_dp[j].saturating_add(gap_cost));
+            b_gap_dp[j] = cmp::min(dp2[j - 1] + start_gap_cost + gap_cost, b_gap_dp[j - 1].saturating_add(gap_cost));
             let traceback_idx = i * len + j;
 
-            dp2[j] = a_gap;
+            dp2[j] = a_gap_dp[j];
 
             if trace_on {
                 traceback[traceback_idx] = 1u8;
             }
 
-            if b_gap < dp2[j] {
-                dp2[j] = b_gap;
+            if b_gap_dp[j] < dp2[j] {
+                dp2[j] = b_gap_dp[j];
 
                 if trace_on {
                     traceback[traceback_idx] = 2u8;
@@ -302,14 +306,15 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
     let b_new_len = b_new.len();
     let mismatch_cost = costs.mismatch_cost as u32;
     let gap_cost = costs.gap_cost as u32;
+    let start_gap_cost = costs.start_gap_cost as u32;
     let transpose_cost = match costs.transpose_cost {
         Some(cost) => cost as u32,
         None => 0
     };
     let allow_transpose = costs.transpose_cost.is_some();
     // upper bound on the number of edits, in case k is too large
-    let max_k = cmp::min((a_new_len as u32) * mismatch_cost, ((a_new_len << 1) as u32) * gap_cost);
-    let max_k = cmp::min(k, max_k + ((b_new_len - a_new_len) as u32) * gap_cost);
+    let max_k = cmp::min((a_new_len as u32) * mismatch_cost, ((a_new_len << 1) as u32) * (start_gap_cost + gap_cost));
+    let max_k = cmp::min(k, max_k + ((b_new_len - a_new_len) as u32) * (start_gap_cost + gap_cost));
     // farthest we can stray from the main diagonal
     let unit_k = (max_k / gap_cost) as usize;
 
@@ -327,10 +332,12 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
     let mut dp0 = vec![0u32; k_len];
     let mut dp1 = vec![0u32; k_len]; // in each iteration, dp0 and dp1 are already calculated
     let mut dp2 = vec![0u32; k_len]; // dp2 the currently calculated row
+    let mut a_gap_dp = vec![u32::MAX; k_len];
+    let mut b_gap_dp = vec![u32::MAX; k_len];
     let mut traceback = if trace_on {vec![0u8; len * k_len]} else {vec![]};
 
     for i in 0..(hi - lo) {
-        dp1[i] = (i as u32) * gap_cost;
+        dp1[i] = (i as u32) * gap_cost + if i == 0 {0} else {start_gap_cost};
 
         if trace_on {
             traceback[0 * k_len + i] = 1u8;
@@ -350,15 +357,21 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
 
         for j in 0..(hi - lo) {
             let idx = lo + j;
-            let sub = {
-                if idx == 0 {
-                    u32::MAX
-                }else{
-                    dp1[idx - 1 - prev_lo1] + ((a_new[i - 1] != b_new[idx - 1]) as u32) * mismatch_cost
-                }
+            let sub = if idx == 0 {
+                u32::MAX
+            }else{
+                dp1[idx - 1 - prev_lo1] + ((a_new[i - 1] != b_new[idx - 1]) as u32) * mismatch_cost
             };
-            let a_gap = if j == 0 {u32::MAX} else {dp2[j - 1] + gap_cost};
-            let b_gap = if idx >= prev_hi {u32::MAX} else {dp1[idx - prev_lo1] + gap_cost};
+            a_gap_dp[j] = if j == 0 {
+                u32::MAX
+            }else{
+                cmp::min(dp2[j - 1] + start_gap_cost + gap_cost, a_gap_dp[j - 1].saturating_add(gap_cost))
+            };
+            b_gap_dp[j] = if idx >= prev_hi {
+                u32::MAX
+            }else{
+                cmp::min(dp1[idx - prev_lo1] + start_gap_cost + gap_cost, b_gap_dp[idx - prev_lo1].saturating_add(gap_cost))
+            };
 
             dp2[j] = sub;
 
@@ -368,16 +381,16 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
                 traceback[traceback_idx] = 0u8;
             }
 
-            if a_gap < dp2[j] {
-                dp2[j] = a_gap;
+            if a_gap_dp[j] < dp2[j] {
+                dp2[j] = a_gap_dp[j];
 
                 if trace_on {
                     traceback[traceback_idx] = 1u8;
                 }
             }
 
-            if b_gap < dp2[j] {
-                dp2[j] = b_gap;
+            if b_gap_dp[j] < dp2[j] {
+                dp2[j] = b_gap_dp[j];
 
                 if trace_on {
                     traceback[traceback_idx] = 2u8;
@@ -530,8 +543,8 @@ pub fn levenshtein_simd_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool, 
         let min_len = cmp::min(a.len(), b.len()) as u32;
         let max_len = cmp::max(a.len(), b.len()) as u32;
         // upper bound on the number of edits, in case k is too large
-        let max_k = cmp::min(min_len * (costs.mismatch_cost as u32), (min_len << 1) * (costs.gap_cost as u32));
-        let max_k = cmp::min(k, max_k + (max_len - min_len) * (costs.gap_cost as u32));
+        let max_k = cmp::min(min_len * (costs.mismatch_cost as u32), (min_len << 1) * (costs.start_gap_cost as u32 + costs.gap_cost as u32));
+        let max_k = cmp::min(k, max_k + (max_len - min_len) * (costs.start_gap_cost as u32 + costs.gap_cost as u32));
         // farthest we can stray from the main diagonal
         let unit_k = cmp::min(max_k / (costs.gap_cost as u32), max_len);
 
@@ -617,9 +630,11 @@ macro_rules! create_levenshtein_simd_core {
 
             // set dp[0][0] = 0
             dp1.slow_insert(k1_div2, 0);
-            // set dp[0][1] = gap_cost and dp[1][0] = gap_cost
-            dp2.slow_insert(k2_div2 - 1, costs.gap_cost as u32);
-            dp2.slow_insert(k2_div2, costs.gap_cost as u32);
+            // set dp[0][1] = start_gap_cost + gap_cost and dp[1][0] = start_gap_cost + gap_cost
+            dp2.slow_insert(k2_div2 - 1, costs.start_gap_cost as u32 + costs.gap_cost as u32);
+            dp2.slow_insert(k2_div2, costs.start_gap_cost as u32 + costs.gap_cost as u32);
+            b_gap_dp.slow_insert(k2_div2 - 1, costs.start_gap_cost as u32 + costs.gap_cost as u32);
+            a_gap_dp.slow_insert(k2_div2, costs.start_gap_cost as u32 + costs.gap_cost as u32);
 
             // a_k1_window and a_k2_window represent reversed portions of the string a
             // copy in half of k1/k2 number of characters
@@ -1154,7 +1169,7 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
 
     let len = needle_len + 1;
     let max_k = cmp::min(k, cmp::min((needle_len as u32) * (LEVENSHTEIN_COSTS.mismatch_cost as u32),
-                                     (needle_len as u32) * (LEVENSHTEIN_COSTS.gap_cost as u32)));
+                                     (needle_len as u32) * (LEVENSHTEIN_COSTS.start_gap_cost as u32 + LEVENSHTEIN_COSTS.gap_cost as u32)));
     let iter_len = if anchored {
         cmp::min(haystack_len, needle_len + (max_k as usize) / (costs.gap_cost as usize))
     }else{
@@ -1164,14 +1179,19 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
     let mut dp0 = vec![0u32; len];
     let mut dp1 = vec![0u32; len];
     let mut dp2 = vec![0u32; len];
+    let mut needle_gap_dp = vec![u32::MAX; len];
+    let mut haystack_gap_dp = vec![u32::MAX; len];
     let mut length0 = vec![0usize; len];
     let mut length1 = vec![0usize; len];
     let mut length2 = vec![0usize; len];
+    let mut needle_gap_length = vec![0usize; len];
+    let mut haystack_gap_length = vec![0usize; len];
     // estimate the number of Matchs
     let mut res = Vec::with_capacity((iter_len + needle_len) / needle_len);
     let mut curr_k = max_k;
     let mismatch_cost = costs.mismatch_cost as u32;
     let gap_cost = costs.gap_cost as u32;
+    let start_gap_cost = costs.start_gap_cost as u32;
     let transpose_cost = match costs.transpose_cost {
         Some(cost) => cost as u32,
         None => 0
@@ -1179,7 +1199,7 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
     let allow_transpose = costs.transpose_cost.is_some();
 
     for i in 0..len {
-        dp1[i] = (i as u32) * gap_cost;
+        dp1[i] = (i as u32) * gap_cost + if i == 0 {0} else {start_gap_cost};
     }
 
     if dp1[len - 1] <= curr_k {
@@ -1191,20 +1211,46 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
     }
 
     for i in 0..iter_len {
-        dp2[0] = if anchored {(i as u32 + 1) * (costs.gap_cost as u32)} else {0};
+        needle_gap_dp[0] = if anchored {(i as u32 + 1) * (costs.gap_cost as u32) + start_gap_cost} else {0};
+        dp2[0] = if anchored {(i as u32 + 1) * (costs.gap_cost as u32) + start_gap_cost} else {0};
+        needle_gap_length[0] = 0;
         length2[0] = 0;
 
         for j in 1..len {
             let sub = dp1[j - 1] + ((needle[j - 1] != haystack[i]) as u32) * mismatch_cost;
-            let a_gap = dp1[j] + gap_cost;
-            let b_gap = dp2[j - 1] + gap_cost;
 
-            dp2[j] = a_gap;
-            length2[j] = length1[j] + 1;
+            let new_gap = dp1[j] + start_gap_cost + gap_cost;
+            let cont_gap = needle_gap_dp[j].saturating_add(gap_cost);
+            if new_gap < cont_gap {
+                needle_gap_dp[j] = new_gap;
+                needle_gap_length[j] = length1[j] + 1;
+            }else if new_gap > cont_gap {
+                needle_gap_dp[j] = cont_gap;
+                needle_gap_length[j] += 1;
+            }else{
+                needle_gap_dp[j] = cont_gap;
+                needle_gap_length[j] = cmp::max(length1[j], needle_gap_length[j]) + 1;
+            }
 
-            if (b_gap < dp2[j]) || (b_gap == dp2[j] && length2[j - 1] > length2[j]) {
-                dp2[j] = b_gap;
-                length2[j] = length2[j - 1];
+            let new_gap = dp2[j - 1] + start_gap_cost + gap_cost;
+            let cont_gap = haystack_gap_dp[j - 1].saturating_add(gap_cost);
+            if new_gap < cont_gap {
+                haystack_gap_dp[j] = new_gap;
+                haystack_gap_length[j] = length2[j - 1];
+            }else if new_gap > cont_gap {
+                haystack_gap_dp[j] = cont_gap;
+                haystack_gap_length[j] = haystack_gap_length[j - 1];
+            }else{
+                haystack_gap_dp[j] = cont_gap;
+                haystack_gap_length[j] = cmp::max(length2[j - 1], haystack_gap_length[j - 1]);
+            }
+
+            dp2[j] = needle_gap_dp[j];
+            length2[j] = needle_gap_length[j];
+
+            if (haystack_gap_dp[j] < dp2[j]) || (haystack_gap_dp[j] == dp2[j] && length2[j - 1] > length2[j]) {
+                dp2[j] = haystack_gap_dp[j];
+                length2[j] = haystack_gap_length[j];
             }
 
             if (sub < dp2[j]) || (sub == dp2[j] && (length1[j - 1] + 1) > length2[j]) {
@@ -1319,7 +1365,7 @@ pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32,
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
         let max_k = cmp::min(k, cmp::min((needle.len() as u32) * (LEVENSHTEIN_COSTS.mismatch_cost as u32),
-                                         (needle.len() as u32) * (LEVENSHTEIN_COSTS.gap_cost as u32)));
+                                         (needle.len() as u32) * (LEVENSHTEIN_COSTS.start_gap_cost as u32 + LEVENSHTEIN_COSTS.gap_cost as u32)));
         let unit_k = max_k / (costs.gap_cost as u32);
         // either the length of the match or the number of edits may exceed the maximum
         // available int size; additionally, MAX value is used to indicate overflow
@@ -1377,13 +1423,18 @@ macro_rules! create_levenshtein_search_simd_core {
             let mut dp_temp = <$jewel>::repeating_max(needle_len);
             let mut dp1 = <$jewel>::repeating_max(needle_len);
             let mut dp2 = <$jewel>::repeating_max(needle_len);
-            dp2.slow_insert(dp2.upper_bound() - 1, costs.gap_cost as u32); // last cell
+            let mut needle_gap_dp = <$jewel>::repeating_max(needle_len);
+            let mut haystack_gap_dp = <$jewel>::repeating_max(needle_len);
+            dp2.slow_insert(dp2.upper_bound() - 1, costs.start_gap_cost as u32 + costs.gap_cost as u32); // last cell
+            haystack_gap_dp.slow_insert(dp2.upper_bound() - 1, costs.start_gap_cost as u32 + costs.gap_cost as u32);
 
             // save length instead of start idx due to int size constraints
             let mut length0 = <$jewel>::repeating(0, needle_len);
             let mut length_temp = <$jewel>::repeating(0, needle_len);
             let mut length1 = <$jewel>::repeating(0, needle_len);
             let mut length2 = <$jewel>::repeating(0, needle_len);
+            let mut needle_gap_length = <$jewel>::repeating(0, needle_len);
+            let mut haystack_gap_length = <$jewel>::repeating(0, needle_len);
 
             let ones = <$jewel>::repeating(1, needle_len);
             let twos = <$jewel>::repeating(2, needle_len);
@@ -1415,14 +1466,13 @@ macro_rules! create_levenshtein_search_simd_core {
             let mut sub = <$jewel>::repeating(0, needle_len);
             let mut sub_length = <$jewel>::repeating(0, needle_len);
             let mut needle_gap = <$jewel>::repeating(0, needle_len);
-            let mut needle_gap_length = <$jewel>::repeating(0, needle_len);
             let mut haystack_gap = <$jewel>::repeating(0, needle_len);
-            let mut haystack_gap_length = <$jewel>::repeating(0, needle_len);
             let mut transpose = <$jewel>::repeating(0, needle_len);
             let mut transpose_length = <$jewel>::repeating(0, needle_len);
 
             let mismatch_cost = <$jewel>::repeating(costs.mismatch_cost as u32, needle_len);
             let gap_cost = <$jewel>::repeating(costs.gap_cost as u32, needle_len);
+            let start_gap_cost = <$jewel>::repeating(costs.start_gap_cost as u32, needle_len);
             let transpose_cost = match costs.transpose_cost {
                 Some(cost) => <$jewel>::repeating(cost as u32, needle_len),
                 None => <$jewel>::repeating(0, needle_len)
@@ -1466,10 +1516,10 @@ macro_rules! create_levenshtein_search_simd_core {
                 // match/mismatch
                 <$jewel>::shift_left_1(&dp1, &mut sub);
 
-                if anchored {
+                if anchored && i > 1 {
                     // dp1 is 2 diagonals behind the current i
                     // must be capped at k to prevent overflow when inserting
-                    sub.insert_last_0(cmp::min((i as u32 - 1) * (costs.gap_cost as u32), k + 1));
+                    sub.insert_last_0(cmp::min((i as u32 - 1) * (costs.gap_cost as u32) + costs.start_gap_cost as u32, k + 1));
                 }
 
                 sub.adds_mut(&match_mask_cost);
@@ -1478,20 +1528,23 @@ macro_rules! create_levenshtein_search_simd_core {
                 sub_length.add_mut(&ones);
 
                 // gap in needle
-                <$jewel>::adds(&dp2, &gap_cost, &mut needle_gap);
-                <$jewel>::add(&length2, &ones, &mut needle_gap_length);
+                <$jewel>::adds(&dp2, &start_gap_cost, &mut needle_gap);
+                <$jewel>::double_min_length(&needle_gap, &mut needle_gap_dp, &length2, &mut needle_gap_length);
+                needle_gap_dp.adds_mut(&gap_cost);
+                needle_gap_length.add_mut(&ones);
 
                 // gap in haystack
-                <$jewel>::shift_left_1(&dp2, &mut haystack_gap); // zeros are shifted in
+                <$jewel>::adds(&dp2, &start_gap_cost, &mut haystack_gap);
+                <$jewel>::double_min_length(&haystack_gap, &mut haystack_gap_dp, &length2, &mut haystack_gap_length);
+                <$jewel>::shift_left_1(&dp2, &mut haystack_gap_dp); // zeros are shifted in
 
                 if anchored {
                     // dp2 is one diagonal behind the current i
-                    haystack_gap.insert_last_0(cmp::min((i as u32) * (costs.gap_cost as u32), k + 1));
+                    haystack_gap_dp.insert_last_0(cmp::min((i as u32) * (costs.gap_cost as u32) + costs.start_gap_cost as u32, k + 1));
                 }
 
-                haystack_gap.adds_mut(&gap_cost);
-
-                <$jewel>::shift_left_1(&length2, &mut haystack_gap_length); // zeros are shifted in
+                haystack_gap_dp.adds_mut(&gap_cost);
+                haystack_gap_length.shift_left_1_mut(); // zeros are shifted in
 
                 if allow_transpose {
                     <$jewel>::shift_left_1(&match_mask0, &mut transpose); // reuse transpose
@@ -1500,9 +1553,9 @@ macro_rules! create_levenshtein_search_simd_core {
                     <$jewel>::andnot(&match_mask1, &transpose, &mut match_mask0); // reuse match_mask0 to represent transpose mask
                     dp0.shift_left_2_mut();
 
-                    if anchored && i > 2 {
+                    if anchored && i > 3 {
                         // dp0 is four diagonals behind the current i
-                        dp0.insert_last_1(cmp::min((i as u32 - 3) * (costs.gap_cost as u32), k + 1));
+                        dp0.insert_last_1(cmp::min((i as u32 - 3) * (costs.gap_cost as u32) + costs.start_gap_cost as u32, k + 1));
                     }
                     // last value in dp0 should not matter if we assume no null bytes are in the strings
 
@@ -1511,8 +1564,8 @@ macro_rules! create_levenshtein_search_simd_core {
                     <$jewel>::add(&length0, &twos, &mut transpose_length);
                 }
 
-                <$jewel>::triple_min_length(&sub, &needle_gap, &haystack_gap, &sub_length,
-                                     &needle_gap_length, &haystack_gap_length, &mut dp0, &mut length0);
+                <$jewel>::triple_min_length(&sub, &needle_gap_dp, &haystack_gap_dp, &sub_length,
+                                            &needle_gap_length, &haystack_gap_length, &mut dp0, &mut length0);
 
                 if allow_transpose {
                     // blend using transpose mask
