@@ -9,6 +9,8 @@
 //! * `hamming_search_simd`
 //! * `hamming_search_simd_with_opts`
 
+use std::*;
+
 use super::*;
 use super::jewel::*;
 
@@ -63,7 +65,7 @@ pub fn hamming_naive(a: &[u8], b: &[u8]) -> u32 {
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
-pub fn hamming_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
+pub fn hamming_search_naive<'a>(needle: &'a [u8], haystack: &'a [u8]) -> impl Iterator<Item = Match> + 'a {
     hamming_search_naive_with_opts(needle, haystack, needle.len() as u32, SearchType::Best)
 }
 
@@ -89,44 +91,52 @@ pub fn hamming_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
-pub fn hamming_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType) -> Vec<Match> {
+pub fn hamming_search_naive_with_opts<'a>(needle: &'a [u8], haystack: &'a [u8], k: u32, search_type: SearchType) -> impl Iterator<Item = Match> + 'a {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
 
     if needle_len > haystack_len {
-        return vec![];
+        return MatchIterator{iter_type: MatchIteratorType::Empty};
     }
 
     let len = haystack_len + 1 - needle_len;
-    let mut res = Vec::with_capacity(haystack_len / needle_len);
     let mut curr_k = k;
+    let mut i = 0;
 
-    'outer: for i in 0..len {
-        let mut final_res = 0u32;
+    let res = iter::from_fn(move || {
+        'outer: while i < len {
+            let mut final_res = 0u32;
 
-        for j in 0..needle_len {
-            final_res += (needle[j] != haystack[i + j]) as u32;
+            for j in 0..needle_len {
+                final_res += (needle[j] != haystack[i + j]) as u32;
 
-            // early stop
-            if final_res > curr_k {
-                continue 'outer;
+                // early stop
+                if final_res > curr_k {
+                    i += 1;
+                    continue 'outer;
+                }
             }
+
+            match search_type {
+                SearchType::Best => curr_k = final_res,
+                _ => ()
+            }
+
+            i += 1;
+
+            return Some(Match{start: i - 1, end: i + needle_len - 1, k: final_res});
         }
 
-        res.push(Match{start: i, end: i + needle_len, k: final_res});
-
-        match search_type {
-            SearchType::First => break,
-            SearchType::Best => curr_k = final_res,
-            _ => ()
-        }
-    }
+        None
+    });
 
     if search_type == SearchType::Best {
-        res.retain(|m| m.k == curr_k);
+        let mut res_vec: Vec<Match> = res.collect(); // collect first to compute curr_k
+        res_vec.retain(|m| m.k == curr_k);
+        return MatchIterator{iter_type: MatchIteratorType::Best(res_vec.into_iter())};
     }
 
-    res
+    MatchIterator{iter_type: MatchIteratorType::All(res)}
 }
 
 /// Returns the hamming distance between two strings by efficiently counting mismatches in chunks of 64 bits.
@@ -401,7 +411,7 @@ pub fn hamming(a: &[u8], b: &[u8]) -> u32 {
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
-pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
+pub fn hamming_search_simd<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Vec<Match> {
     hamming_search_simd_with_opts(needle, haystack, needle.len() as u32, SearchType::Best)
 }
 
@@ -433,7 +443,7 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
-pub fn hamming_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType) -> Vec<Match> {
+pub fn hamming_search_simd_with_opts<'a>(needle: &'a [u8], haystack: &'a [u8], k: u32, search_type: SearchType) -> Vec<Match> {
     if needle.len() > haystack.len() {
         return vec![];
     }
@@ -453,7 +463,7 @@ pub fn hamming_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32, sea
         }
     }
 
-    hamming_search_naive_with_opts(needle, haystack, k, search_type)
+    hamming_search_naive_with_opts(needle, haystack, k, search_type).collect()
 }
 
 macro_rules! create_hamming_search_simd_core {
@@ -551,7 +561,7 @@ create_hamming_search_simd_core!(hamming_search_simd_core_sse, Sse, "sse4.1");
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
-pub fn hamming_search(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
+pub fn hamming_search<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Vec<Match> {
     hamming_search_simd(needle, haystack)
 }
 

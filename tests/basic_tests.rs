@@ -699,7 +699,6 @@ fn test_basic_levenshtein_search_simd() {
     let b13 = b"est";
     let k13 = 3;
     res = levenshtein_search_simd_with_opts(a13, b13, k13, SearchType::All, EditCosts::new(1, 1, 2, None), true);
-    println!("{:?}", res);
     assert!(res == vec![Match{start: 0, end: 3, k: 3}]);
 
     let a14 = b"testing";

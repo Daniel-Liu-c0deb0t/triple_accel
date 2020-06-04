@@ -166,7 +166,7 @@ pub struct Edit {
 /// first match when searching.
 ///
 /// This is used as an argument for searching routines.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum SearchType {
     All,
     Best,
@@ -238,6 +238,36 @@ fn check_no_null_bytes(s: &[u8]) {
     for i in 0..s.len() {
         if s[i] == 0u8 {
             panic!("No zero/null bytes allowed in the string!");
+        }
+    }
+}
+
+enum MatchIteratorType<I: Iterator<Item = Match>> {
+    Empty,
+    All(I),
+    Best(<Vec<Match> as IntoIterator>::IntoIter)
+}
+
+struct MatchIterator<I: Iterator<Item = Match>> {
+    iter_type: MatchIteratorType<I>
+}
+
+impl<I: Iterator<Item = Match>> Iterator for MatchIterator<I> {
+    type Item = Match;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.iter_type {
+            MatchIteratorType::Empty => None,
+            MatchIteratorType::All(ref mut i) => i.next(),
+            MatchIteratorType::Best(ref mut i) => i.next()
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self.iter_type {
+            MatchIteratorType::Empty => (0, None),
+            MatchIteratorType::All(ref i) => i.size_hint(),
+            MatchIteratorType::Best(ref i) => i.size_hint()
         }
     }
 }
