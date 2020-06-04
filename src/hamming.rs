@@ -390,6 +390,9 @@ pub fn hamming(a: &[u8], b: &[u8]) -> u32 {
 /// * `needle` - pattern string (slice)
 /// * `haystack` - text string (slice)
 ///
+/// # Panics
+/// * When there are zero/null bytes in the `haystack` string.
+///
 /// # Example
 /// ```
 /// # use triple_accel::*;
@@ -419,6 +422,9 @@ pub fn hamming_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// * `search_type` - whether to only return the "best" matches with the lowest Hamming distance or
 /// the first match that is encountered
 ///
+/// # Panics
+/// * When there are zero/null bytes in the `haystack` string.
+///
 /// # Example
 /// ```
 /// # use triple_accel::*;
@@ -435,6 +441,8 @@ pub fn hamming_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32, sea
     if needle.len() == 0 {
         return vec![];
     }
+
+    check_no_null_bytes(haystack);
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -532,6 +540,9 @@ create_hamming_search_simd_core!(hamming_search_simd_core_sse, Sse, "sse4.1");
 /// # Arguments
 /// * `needle` - pattern string (slice)
 /// * `haystack` - text string (slice)
+///
+/// # Panics
+/// * When there are zero/null bytes in the `haystack` string.
 ///
 /// # Example
 /// ```

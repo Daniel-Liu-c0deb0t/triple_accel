@@ -32,6 +32,8 @@ impl EditCosts {
     /// # Arguments
     /// * `mismatch_cost` - cost of a mismatch edit, which must be positive
     /// * `gap_cost` - cost of a gap, which must be positive
+    /// * `start_gap_cost` - additional cost of starting a gap, for affine gap costs; this can
+    /// be zero for linear gap costs
     /// * `transpose_cost` - cost of a transpose, which must be cheaper than doing the equivalent
     /// operation with mismatches and gaps
     pub fn new(mismatch_cost: u8, gap_cost: u8, start_gap_cost: u8, transpose_cost: Option<u8>) -> Self {
@@ -56,11 +58,11 @@ impl EditCosts {
     /// For Levenshtein searches, the cost of transpositions must be less than or equal to cost of
     /// gaps.
     ///
-    /// This is important for free gaps at the beginning of the needle to take priority over
-    /// transpositions.
+    /// This is important for free gaps at the beginning of the needle to be unable to take priority
+    /// over transpositions, as it is possible to emulate a transposition with two gaps.
     fn check_search(&self) {
         if let Some(cost) = self.transpose_cost {
-            assert!(cost <= self.gap_cost);
+            assert!(cost <= self.start_gap_cost + self.gap_cost);
         }
     }
 }
@@ -487,6 +489,9 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
 /// * `b` - second string (slice)
 /// * `k` - maximum number of edits allowed between `a` and `b`
 ///
+/// # Panics
+/// * When there are zero/null bytes in the strings.
+///
 /// # Example
 /// ```
 /// # use triple_accel::*;
@@ -524,6 +529,9 @@ pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32) -> Option<u32> {
 /// * `trace_on` - whether to return the traceback, the sequence of edits between `a` and `b`
 /// * `costs` - `EditCosts` struct for the cost of each edit operation
 ///
+/// # Panics
+/// * When there are zero/null bytes in the strings.
+///
 /// # Example
 /// ```
 /// # use triple_accel::*;
@@ -537,6 +545,9 @@ pub fn levenshtein_simd_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool, 
     if a.len() == 0 && b.len() == 0 {
         return if trace_on {Some((0u32, Some(vec![])))} else {Some((0u32, None))};
     }
+
+    check_no_null_bytes(a);
+    check_no_null_bytes(b);
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -728,6 +739,8 @@ macro_rules! create_levenshtein_simd_core {
             // this operation obtains the comparison of characters along the (anti) diagonal
             // if transpositions are allowed, then previous match_masks must be saved to calculate
             // a[i - 1] == b[j] and a[i] == b[j - 1]
+            // for speed, transpositions are done by directly blending using the mask, without calculating
+            // the minimum cost compared to the other edit operations
             //
             // example of moving the windows:
             // a windows: [5 4 3 2 1] -> [6 5 4 3 2] (right shift + insert)
@@ -1003,6 +1016,9 @@ create_levenshtein_simd_core!(levenshtein_simd_core_sse_nx4x32, traceback_sse_nx
 /// * `a` - first string (slice)
 /// * `b` - second string (slice)
 ///
+/// # Panics
+/// * When there are zero/null bytes in the strings.
+///
 /// # Example
 /// ```
 /// # use triple_accel::*;
@@ -1025,6 +1041,9 @@ pub fn levenshtein(a: &[u8], b: &[u8]) -> u32 {
 /// # Arguments
 /// * `a` - first string (slice)
 /// * `b` - second string (slice)
+///
+/// # Panics
+/// * When there are zero/null bytes in the strings.
 ///
 /// # Example
 /// ```
@@ -1050,6 +1069,9 @@ pub fn rdamerau(a: &[u8], b: &[u8]) -> u32 {
 /// # Arguments
 /// * `a` - first string (slice)
 /// * `b` - second string (slice)
+///
+/// # Panics
+/// * When there are zero/null bytes in the strings.
 ///
 /// # Example
 /// ```
@@ -1085,6 +1107,9 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8]) -> u32 {
 /// # Arguments
 /// * `a` - first string (slice)
 /// * `b` - second string (slice)
+///
+/// # Panics
+/// * When there are zero/null bytes in the strings.
 ///
 /// # Example
 /// ```
@@ -1311,6 +1336,9 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
 /// * `needle` - pattern string (slice)
 /// * `haystack` - text string (slice)
 ///
+/// # Panics
+/// * When there are zero/null bytes in the strings.
+///
 /// # Example
 /// ```
 /// # use triple_accel::*;
@@ -1346,6 +1374,9 @@ pub fn levenshtein_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// * `anchored` - whether the `needle` should be anchored to the start of the `haystack` string,
 /// causing any shifts to cost gap edits
 ///
+/// # Panics
+/// * When there are zero/null bytes in the strings.
+///
 /// # Example
 /// ```
 /// # use triple_accel::*;
@@ -1360,6 +1391,8 @@ pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32,
         return vec![];
     }
 
+    check_no_null_bytes(needle);
+    check_no_null_bytes(haystack);
     costs.check_search();
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -1499,7 +1532,10 @@ macro_rules! create_levenshtein_search_simd_core {
             // therefore, starting at i = 1 does not include the first diagonal that only contains
             // a zero from the initial row of zeros
             // when left shift are required, then zeros must be shifted in
-            // if anchored = true, then the number of gaps times the gap cost must be shifted in
+            // if anchored = true, then the number of gaps times the gap cost plus the starting gap
+            // cost must be shifted in
+            // for speed, transpositions are done by directly blending using the mask, without calculating
+            // the minimum cost compared to the other edit operations
 
             for i in 1..len {
                 // shift the haystack window
@@ -1536,11 +1572,13 @@ macro_rules! create_levenshtein_search_simd_core {
                 // gap in haystack
                 <$jewel>::adds(&dp2, &start_gap_cost, &mut haystack_gap);
                 <$jewel>::double_min_length(&haystack_gap, &mut haystack_gap_dp, &length2, &mut haystack_gap_length);
-                <$jewel>::shift_left_1(&dp2, &mut haystack_gap_dp); // zeros are shifted in
+                haystack_gap_dp.shift_left_1_mut(); // zeros are shifted in
 
                 if anchored {
                     // dp2 is one diagonal behind the current i
                     haystack_gap_dp.insert_last_0(cmp::min((i as u32) * (costs.gap_cost as u32) + costs.start_gap_cost as u32, k + 1));
+                }else{
+                    haystack_gap_dp.insert_last_0(costs.start_gap_cost as u32);
                 }
 
                 haystack_gap_dp.adds_mut(&gap_cost);
@@ -1637,6 +1675,9 @@ create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_nx4x32, Ss
 /// # Arguments
 /// * `needle` - pattern string (slice)
 /// * `haystack` - text string (slice)
+///
+/// # Panics
+/// * When there are zero/null bytes in the strings.
 ///
 /// # Example
 /// ```

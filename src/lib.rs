@@ -234,3 +234,11 @@ pub fn fill_str(dest: &mut [u8], src: &[u8]) {
     }
 }
 
+fn check_no_null_bytes(s: &[u8]) {
+    for i in 0..s.len() {
+        if s[i] == 0u8 {
+            panic!("No zero/null bytes allowed in the string!");
+        }
+    }
+}
+
