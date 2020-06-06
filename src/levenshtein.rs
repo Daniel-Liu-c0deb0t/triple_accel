@@ -1152,7 +1152,7 @@ pub fn rdamerau_exp(a: &[u8], b: &[u8]) -> u32 {
 /// // note: it is possible to end the match at two different positions
 /// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
 /// ```
-pub fn levenshtein_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
+pub fn levenshtein_search_naive<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<dyn Iterator<Item = Match> + 'a> {
     levenshtein_search_naive_with_opts(needle, haystack, u32::MAX, SearchType::Best, LEVENSHTEIN_COSTS, false)
 }
 
@@ -1181,12 +1181,12 @@ pub fn levenshtein_search_naive(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// // note: it is possible to end the match at two different positions
 /// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
 /// ```
-pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {
+pub fn levenshtein_search_naive_with_opts<'a>(needle: &'a [u8], haystack: &'a [u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Box<dyn Iterator<Item = Match> + 'a> {
     let needle_len = needle.len();
     let haystack_len = haystack.len();
 
     if needle_len == 0 {
-        return vec![];
+        return Box::new(iter::empty());
     }
 
     // enforce another constraint on the costs
@@ -1211,8 +1211,6 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
     let mut length2 = vec![0usize; len];
     let mut needle_gap_length = vec![0usize; len];
     let mut haystack_gap_length = vec![0usize; len];
-    // estimate the number of Matchs
-    let mut res = Vec::with_capacity((iter_len + needle_len) / needle_len);
     let mut curr_k = max_k;
     let mismatch_cost = costs.mismatch_cost as u32;
     let gap_cost = costs.gap_cost as u32;
@@ -1222,101 +1220,120 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
         None => 0
     };
     let allow_transpose = costs.transpose_cost.is_some();
+    let mut first = true;
+    let mut i = 0;
 
-    for i in 0..len {
-        dp1[i] = (i as u32) * gap_cost + if i == 0 {0} else {start_gap_cost};
-    }
+    let res = iter::from_fn(move || {
+        if first {
+            first = false;
 
-    if dp1[len - 1] <= curr_k {
-        res.push(Match{start: 0, end: 0, k: dp1[len - 1]});
-
-        if search_type == SearchType::Best {
-            curr_k = dp1[len - 1];
-        }
-    }
-
-    for i in 0..iter_len {
-        needle_gap_dp[0] = if anchored {(i as u32 + 1) * (costs.gap_cost as u32) + start_gap_cost} else {0};
-        dp2[0] = if anchored {(i as u32 + 1) * (costs.gap_cost as u32) + start_gap_cost} else {0};
-        needle_gap_length[0] = 0;
-        length2[0] = 0;
-
-        for j in 1..len {
-            let sub = dp1[j - 1] + ((needle[j - 1] != haystack[i]) as u32) * mismatch_cost;
-
-            let new_gap = dp1[j] + start_gap_cost + gap_cost;
-            let cont_gap = needle_gap_dp[j].saturating_add(gap_cost);
-            if new_gap < cont_gap {
-                needle_gap_dp[j] = new_gap;
-                needle_gap_length[j] = length1[j] + 1;
-            }else if new_gap > cont_gap {
-                needle_gap_dp[j] = cont_gap;
-                needle_gap_length[j] += 1;
-            }else{
-                needle_gap_dp[j] = cont_gap;
-                needle_gap_length[j] = cmp::max(length1[j], needle_gap_length[j]) + 1;
+            for j in 0..len {
+                dp1[j] = (j as u32) * gap_cost + if j == 0 {0} else {start_gap_cost};
             }
 
-            let new_gap = dp2[j - 1] + start_gap_cost + gap_cost;
-            let cont_gap = haystack_gap_dp[j - 1].saturating_add(gap_cost);
-            if new_gap < cont_gap {
-                haystack_gap_dp[j] = new_gap;
-                haystack_gap_length[j] = length2[j - 1];
-            }else if new_gap > cont_gap {
-                haystack_gap_dp[j] = cont_gap;
-                haystack_gap_length[j] = haystack_gap_length[j - 1];
-            }else{
-                haystack_gap_dp[j] = cont_gap;
-                haystack_gap_length[j] = cmp::max(length2[j - 1], haystack_gap_length[j - 1]);
-            }
-
-            dp2[j] = needle_gap_dp[j];
-            length2[j] = needle_gap_length[j];
-
-            if (haystack_gap_dp[j] < dp2[j]) || (haystack_gap_dp[j] == dp2[j] && length2[j - 1] > length2[j]) {
-                dp2[j] = haystack_gap_dp[j];
-                length2[j] = haystack_gap_length[j];
-            }
-
-            if (sub < dp2[j]) || (sub == dp2[j] && (length1[j - 1] + 1) > length2[j]) {
-                dp2[j] = sub;
-                length2[j] = length1[j - 1] + 1;
-            }
-
-            if allow_transpose && i > 0 && j > 1
-                && needle[j - 1] == haystack[i - 1] && needle[j - 2] == haystack[i] {
-                let transpose = dp0[j - 2] + transpose_cost;
-
-                if transpose <= dp2[j] {
-                    dp2[j] = transpose;
-                    length2[j] = length0[j - 2] + 2;
+            if dp1[len - 1] <= curr_k {
+                if search_type == SearchType::Best {
+                    curr_k = dp1[len - 1];
                 }
+
+                return Some((Match{start: 0, end: 0, k: dp1[len - 1]}, curr_k));
             }
         }
 
-        let final_res = dp2[len - 1];
+        while i < iter_len {
+            needle_gap_dp[0] = if anchored {(i as u32 + 1) * (costs.gap_cost as u32) + start_gap_cost} else {0};
+            dp2[0] = if anchored {(i as u32 + 1) * (costs.gap_cost as u32) + start_gap_cost} else {0};
+            needle_gap_length[0] = 0;
+            length2[0] = 0;
 
-        if final_res <= curr_k {
-            res.push(Match{start: i + 1 - length2[len - 1], end: i + 1, k: final_res});
+            for j in 1..len {
+                let sub = dp1[j - 1] + ((needle[j - 1] != haystack[i]) as u32) * mismatch_cost;
 
-            match search_type {
-                SearchType::First => break,
-                SearchType::Best => curr_k = final_res,
-                _ => ()
+                let new_gap = dp1[j] + start_gap_cost + gap_cost;
+                let cont_gap = needle_gap_dp[j].saturating_add(gap_cost);
+                if new_gap < cont_gap {
+                    needle_gap_dp[j] = new_gap;
+                    needle_gap_length[j] = length1[j] + 1;
+                }else if new_gap > cont_gap {
+                    needle_gap_dp[j] = cont_gap;
+                    needle_gap_length[j] += 1;
+                }else{
+                    needle_gap_dp[j] = cont_gap;
+                    needle_gap_length[j] = cmp::max(length1[j], needle_gap_length[j]) + 1;
+                }
+
+                let new_gap = dp2[j - 1] + start_gap_cost + gap_cost;
+                let cont_gap = haystack_gap_dp[j - 1].saturating_add(gap_cost);
+                if new_gap < cont_gap {
+                    haystack_gap_dp[j] = new_gap;
+                    haystack_gap_length[j] = length2[j - 1];
+                }else if new_gap > cont_gap {
+                    haystack_gap_dp[j] = cont_gap;
+                    haystack_gap_length[j] = haystack_gap_length[j - 1];
+                }else{
+                    haystack_gap_dp[j] = cont_gap;
+                    haystack_gap_length[j] = cmp::max(length2[j - 1], haystack_gap_length[j - 1]);
+                }
+
+                dp2[j] = needle_gap_dp[j];
+                length2[j] = needle_gap_length[j];
+
+                if (haystack_gap_dp[j] < dp2[j]) || (haystack_gap_dp[j] == dp2[j] && length2[j - 1] > length2[j]) {
+                    dp2[j] = haystack_gap_dp[j];
+                    length2[j] = haystack_gap_length[j];
+                }
+
+                if (sub < dp2[j]) || (sub == dp2[j] && (length1[j - 1] + 1) > length2[j]) {
+                    dp2[j] = sub;
+                    length2[j] = length1[j - 1] + 1;
+                }
+
+                if allow_transpose && i > 0 && j > 1
+                    && needle[j - 1] == haystack[i - 1] && needle[j - 2] == haystack[i] {
+                        let transpose = dp0[j - 2] + transpose_cost;
+
+                        if transpose <= dp2[j] {
+                            dp2[j] = transpose;
+                            length2[j] = length0[j - 2] + 2;
+                        }
+                    }
+            }
+
+            let final_res = dp2[len - 1];
+            let final_length = length2[len - 1];
+
+            mem::swap(&mut dp0, &mut dp1);
+            mem::swap(&mut dp1, &mut dp2);
+            mem::swap(&mut length0, &mut length1);
+            mem::swap(&mut length1, &mut length2);
+
+            i += 1;
+
+            if final_res <= curr_k {
+                match search_type {
+                    SearchType::Best => curr_k = final_res,
+                    _ => ()
+                }
+
+                return Some((Match{start: i - final_length, end: i, k: final_res}, curr_k));
             }
         }
 
-        mem::swap(&mut dp0, &mut dp1);
-        mem::swap(&mut dp1, &mut dp2);
-        mem::swap(&mut length0, &mut length1);
-        mem::swap(&mut length1, &mut length2);
-    }
+        None
+    });
 
     if search_type == SearchType::Best {
-        res.retain(|m| m.k == curr_k);
+        // estimate the number of Matches
+        let mut res_vec = Vec::with_capacity((iter_len + needle_len) / needle_len);
+        res.for_each(|m| {
+            res_vec.push(m.0);
+            curr_k = m.1;
+        });
+
+        return Box::new(res_vec.into_iter().filter(move |m| m.k == curr_k));
     }
 
-    res
+    Box::new(res.map(|m| m.0))
 }
 
 /// Returns a vector of the best `Match`s by searching through the text `haystack` for the
@@ -1348,7 +1365,7 @@ pub fn levenshtein_search_naive_with_opts(needle: &[u8], haystack: &[u8], k: u32
 /// // note: it is possible to end the match at two different positions
 /// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
 /// ```
-pub fn levenshtein_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
+pub fn levenshtein_search_simd<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<dyn Iterator<Item = Match> + 'a> {
     levenshtein_search_simd_with_opts(needle, haystack, u32::MAX, SearchType::Best, LEVENSHTEIN_COSTS, false)
 }
 
@@ -1386,9 +1403,9 @@ pub fn levenshtein_search_simd(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
 /// // note: it is possible to end the match at two different positions
 /// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
 /// ```
-pub fn levenshtein_search_simd_with_opts(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {
+pub fn levenshtein_search_simd_with_opts<'a>(needle: &'a [u8], haystack: &'a [u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Box<dyn Iterator<Item = Match> + 'a> {
     if needle.len() == 0 {
-        return vec![];
+        return Box::new(iter::empty());
     }
 
     check_no_null_bytes(needle);
@@ -1444,7 +1461,7 @@ macro_rules! create_levenshtein_search_simd_core {
     ($name:ident, $jewel:ty, $target:literal) => {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         #[target_feature(enable = $target)]
-        unsafe fn $name(needle: &[u8], haystack: &[u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Vec<Match> {
+        unsafe fn $name<'a>(needle: &'a [u8], haystack: &'a [u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Box<dyn Iterator<Item = Match> + 'a> {
             #[cfg(debug_assertions)]
             {
                 println!("Debug: Levenshtein search Jewel vector type {} for target {}.", stringify!($jewel), stringify!($target));
@@ -1480,9 +1497,6 @@ macro_rules! create_levenshtein_search_simd_core {
             };
 
             let final_idx = dp1.upper_bound() - needle_len;
-
-            // estimate the number of Matchs
-            let mut res = Vec::with_capacity(len / needle_len);
 
             // load needle characters into needle_window in reversed order
             let mut needle_window = <$jewel>::repeating(0, needle_len);
@@ -1537,111 +1551,127 @@ macro_rules! create_levenshtein_search_simd_core {
             // for speed, transpositions are done by directly blending using the mask, without calculating
             // the minimum cost compared to the other edit operations
 
-            for i in 1..len {
-                // shift the haystack window
-                haystack_window.shift_left_1_mut();
+            let mut i = 1;
 
-                if haystack_idx < haystack_len {
-                    haystack_window.insert_last_0(*haystack.get_unchecked(haystack_idx) as u32);
-                    haystack_idx += 1;
-                }
+            let res = iter::from_fn(move || {
+                while i < len {
+                    // shift the haystack window
+                    haystack_window.shift_left_1_mut();
 
-                <$jewel>::cmpeq(&needle_window, &haystack_window, &mut match_mask1);
-                <$jewel>::andnot(&match_mask1, &mismatch_cost, &mut match_mask_cost);
-
-                // match/mismatch
-                <$jewel>::shift_left_1(&dp1, &mut sub);
-
-                if anchored && i > 1 {
-                    // dp1 is 2 diagonals behind the current i
-                    // must be capped at k to prevent overflow when inserting
-                    sub.insert_last_0(cmp::min((i as u32 - 1) * (costs.gap_cost as u32) + costs.start_gap_cost as u32, k + 1));
-                }
-
-                sub.adds_mut(&match_mask_cost);
-
-                <$jewel>::shift_left_1(&length1, &mut sub_length); // zeros are shifted in
-                sub_length.add_mut(&ones);
-
-                // gap in needle
-                <$jewel>::adds(&dp2, &start_gap_cost, &mut needle_gap);
-                <$jewel>::double_min_length(&needle_gap, &mut needle_gap_dp, &length2, &mut needle_gap_length);
-                needle_gap_dp.adds_mut(&gap_cost);
-                needle_gap_length.add_mut(&ones);
-
-                // gap in haystack
-                <$jewel>::adds(&dp2, &start_gap_cost, &mut haystack_gap);
-                <$jewel>::double_min_length(&haystack_gap, &mut haystack_gap_dp, &length2, &mut haystack_gap_length);
-                haystack_gap_dp.shift_left_1_mut(); // zeros are shifted in
-
-                if anchored {
-                    // dp2 is one diagonal behind the current i
-                    haystack_gap_dp.insert_last_0(cmp::min((i as u32) * (costs.gap_cost as u32) + costs.start_gap_cost as u32, k + 1));
-                }else{
-                    haystack_gap_dp.insert_last_0(costs.start_gap_cost as u32);
-                }
-
-                haystack_gap_dp.adds_mut(&gap_cost);
-                haystack_gap_length.shift_left_1_mut(); // zeros are shifted in
-
-                if allow_transpose {
-                    <$jewel>::shift_left_1(&match_mask0, &mut transpose); // reuse transpose
-                    transpose.and_mut(&match_mask0);
-                    // ensure that current matches are excluded
-                    <$jewel>::andnot(&match_mask1, &transpose, &mut match_mask0); // reuse match_mask0 to represent transpose mask
-                    dp0.shift_left_2_mut();
-
-                    if anchored && i > 3 {
-                        // dp0 is four diagonals behind the current i
-                        dp0.insert_last_1(cmp::min((i as u32 - 3) * (costs.gap_cost as u32) + costs.start_gap_cost as u32, k + 1));
+                    if haystack_idx < haystack_len {
+                        haystack_window.insert_last_0(*haystack.get_unchecked(haystack_idx) as u32);
+                        haystack_idx += 1;
                     }
-                    // last value in dp0 should not matter if we assume no null bytes are in the strings
 
-                    length0.shift_left_2_mut();
-                    <$jewel>::adds(&dp0, &transpose_cost, &mut transpose);
-                    <$jewel>::add(&length0, &twos, &mut transpose_length);
-                }
+                    <$jewel>::cmpeq(&needle_window, &haystack_window, &mut match_mask1);
+                    <$jewel>::andnot(&match_mask1, &mismatch_cost, &mut match_mask_cost);
 
-                <$jewel>::triple_min_length(&sub, &needle_gap_dp, &haystack_gap_dp, &sub_length,
-                                            &needle_gap_length, &haystack_gap_length, &mut dp0, &mut length0);
+                    // match/mismatch
+                    <$jewel>::shift_left_1(&dp1, &mut sub);
 
-                if allow_transpose {
-                    // blend using transpose mask
-                    dp0.blendv_mut(&transpose, &match_mask0);
-                    length0.blendv_mut(&transpose_length, &match_mask0);
-                    mem::swap(&mut match_mask0, &mut match_mask1);
-                }
+                    if anchored && i > 1 {
+                        // dp1 is 2 diagonals behind the current i
+                        // must be capped at k to prevent overflow when inserting
+                        sub.insert_last_0(cmp::min((i as u32 - 1) * (costs.gap_cost as u32) + costs.start_gap_cost as u32, k + 1));
+                    }
 
-                mem::swap(&mut dp0, &mut dp_temp);
-                mem::swap(&mut dp_temp, &mut dp1);
-                mem::swap(&mut dp1, &mut dp2);
-                mem::swap(&mut length0, &mut length_temp);
-                mem::swap(&mut length_temp, &mut length1);
-                mem::swap(&mut length1, &mut length2);
+                    sub.adds_mut(&match_mask_cost);
 
-                if i >= needle_len - 1 {
-                    let final_res = dp2.slow_extract(final_idx);
-                    let final_length = length2.slow_extract(final_idx) as usize;
+                    <$jewel>::shift_left_1(&length1, &mut sub_length); // zeros are shifted in
+                    sub_length.add_mut(&ones);
 
-                    if final_res <= curr_k {
-                        let end_idx = i + 1 - needle_len;
-                        res.push(Match{start: end_idx - final_length, end: end_idx, k: final_res});
+                    // gap in needle
+                    <$jewel>::adds(&dp2, &start_gap_cost, &mut needle_gap);
+                    <$jewel>::double_min_length(&needle_gap, &mut needle_gap_dp, &length2, &mut needle_gap_length);
+                    needle_gap_dp.adds_mut(&gap_cost);
+                    needle_gap_length.add_mut(&ones);
 
-                        match search_type {
-                            SearchType::First => break,
-                            // if we want the best, then we can shrink the k threshold
-                            SearchType::Best => curr_k = final_res,
-                            _ => ()
+                    // gap in haystack
+                    <$jewel>::adds(&dp2, &start_gap_cost, &mut haystack_gap);
+                    <$jewel>::double_min_length(&haystack_gap, &mut haystack_gap_dp, &length2, &mut haystack_gap_length);
+                    haystack_gap_dp.shift_left_1_mut(); // zeros are shifted in
+
+                    if anchored {
+                        // dp2 is one diagonal behind the current i
+                        haystack_gap_dp.insert_last_0(cmp::min((i as u32) * (costs.gap_cost as u32) + costs.start_gap_cost as u32, k + 1));
+                    }else{
+                        haystack_gap_dp.insert_last_0(costs.start_gap_cost as u32);
+                    }
+
+                    haystack_gap_dp.adds_mut(&gap_cost);
+                    haystack_gap_length.shift_left_1_mut(); // zeros are shifted in
+
+                    if allow_transpose {
+                        <$jewel>::shift_left_1(&match_mask0, &mut transpose); // reuse transpose
+                        transpose.and_mut(&match_mask0);
+                        // ensure that current matches are excluded
+                        <$jewel>::andnot(&match_mask1, &transpose, &mut match_mask0); // reuse match_mask0 to represent transpose mask
+                        dp0.shift_left_2_mut();
+
+                        if anchored && i > 3 {
+                            // dp0 is four diagonals behind the current i
+                            dp0.insert_last_1(cmp::min((i as u32 - 3) * (costs.gap_cost as u32) + costs.start_gap_cost as u32, k + 1));
+                        }
+                        // last value in dp0 should not matter if we assume no null bytes are in the strings
+
+                        length0.shift_left_2_mut();
+                        <$jewel>::adds(&dp0, &transpose_cost, &mut transpose);
+                        <$jewel>::add(&length0, &twos, &mut transpose_length);
+                    }
+
+                    <$jewel>::triple_min_length(&sub, &needle_gap_dp, &haystack_gap_dp, &sub_length,
+                                                &needle_gap_length, &haystack_gap_length, &mut dp0, &mut length0);
+
+                    if allow_transpose {
+                        // blend using transpose mask
+                        dp0.blendv_mut(&transpose, &match_mask0);
+                        length0.blendv_mut(&transpose_length, &match_mask0);
+                        mem::swap(&mut match_mask0, &mut match_mask1);
+                    }
+
+                    mem::swap(&mut dp0, &mut dp_temp);
+                    mem::swap(&mut dp_temp, &mut dp1);
+                    mem::swap(&mut dp1, &mut dp2);
+                    mem::swap(&mut length0, &mut length_temp);
+                    mem::swap(&mut length_temp, &mut length1);
+                    mem::swap(&mut length1, &mut length2);
+
+                    i += 1;
+
+                    if i >= needle_len {
+                        let final_res = dp2.slow_extract(final_idx);
+                        let final_length = length2.slow_extract(final_idx) as usize;
+
+                        if final_res <= curr_k {
+                            let end_idx = i - needle_len;
+
+                            match search_type {
+                                // if we want the best, then we can shrink the k threshold
+                                SearchType::Best => curr_k = final_res,
+                                _ => ()
+                            }
+
+                            return Some((Match{start: end_idx - final_length, end: end_idx, k: final_res}, curr_k));
                         }
                     }
                 }
-            }
+
+                None
+            });
 
             if search_type == SearchType::Best {
-                res.retain(|m| m.k == curr_k); // only retain matches with the lowest k
+                // estimate the number of Matches
+                let mut res_vec = Vec::with_capacity(len / needle_len);
+                res.for_each(|m| {
+                    res_vec.push(m.0);
+                    curr_k = m.1;
+                });
+
+                // only retain matches with the lowest k
+                return Box::new(res_vec.into_iter().filter(move |m| m.k == curr_k));
             }
 
-            res
+            Box::new(res.map(|m| m.0))
         }
     };
 }
@@ -1687,7 +1717,7 @@ create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_nx4x32, Ss
 /// // note: it is possible to end the match at two different positions
 /// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
 /// ```
-pub fn levenshtein_search(needle: &[u8], haystack: &[u8]) -> Vec<Match> {
+pub fn levenshtein_search<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<dyn Iterator<Item = Match> + 'a> {
     levenshtein_search_simd(needle, haystack)
 }
 
