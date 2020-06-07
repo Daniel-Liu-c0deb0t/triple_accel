@@ -1132,7 +1132,7 @@ pub fn rdamerau_exp(a: &[u8], b: &[u8]) -> u32 {
     res.unwrap().0
 }
 
-/// Returns a vector of the best `Match`s by searching through the text `haystack` for the
+/// Returns an iterator over the best `Match`s by searching through the text `haystack` for the
 /// pattern `needle` using the naive algorithm.
 ///
 /// The best matches are the matches with the lowest Levenshtein distance. Note that overlapping
@@ -1147,7 +1147,7 @@ pub fn rdamerau_exp(a: &[u8], b: &[u8]) -> u32 {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-/// let matches = levenshtein_search_naive(b"abc", b"  abd");
+/// let matches: Vec<Match> = levenshtein_search_naive(b"abc", b"  abd").collect();
 ///
 /// // note: it is possible to end the match at two different positions
 /// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
@@ -1156,7 +1156,7 @@ pub fn levenshtein_search_naive<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box
     levenshtein_search_naive_with_opts(needle, haystack, u32::MAX, SearchType::Best, LEVENSHTEIN_COSTS, false)
 }
 
-/// Returns a vector of `Match`s by searching through the text `haystack` for the
+/// Returns an iterator over `Match`s by searching through the text `haystack` for the
 /// pattern `needle` using the naive algorithm, with extra options.
 ///
 /// Note that overlapping matches may be returned.
@@ -1176,7 +1176,7 @@ pub fn levenshtein_search_naive<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-/// let matches = levenshtein_search_naive_with_opts(b"abc", b"  acb", 1, SearchType::All, RDAMERAU_COSTS, false);
+/// let matches: Vec<Match> = levenshtein_search_naive_with_opts(b"abc", b"  acb", 1, SearchType::All, RDAMERAU_COSTS, false).collect();
 ///
 /// // note: it is possible to end the match at two different positions
 /// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
@@ -1336,7 +1336,7 @@ pub fn levenshtein_search_naive_with_opts<'a>(needle: &'a [u8], haystack: &'a [u
     Box::new(res.map(|m| m.0))
 }
 
-/// Returns a vector of the best `Match`s by searching through the text `haystack` for the
+/// Returns an iterator over the best `Match`s by searching through the text `haystack` for the
 /// pattern `needle` using SIMD acceleration.
 ///
 /// The best matches are the matches with the lowest Levenshtein distance. Note that overlapping
@@ -1360,7 +1360,7 @@ pub fn levenshtein_search_naive_with_opts<'a>(needle: &'a [u8], haystack: &'a [u
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-/// let matches = levenshtein_search_simd(b"abc", b"  abd");
+/// let matches: Vec<Match> = levenshtein_search_simd(b"abc", b"  abd").collect();
 ///
 /// // note: it is possible to end the match at two different positions
 /// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
@@ -1369,7 +1369,7 @@ pub fn levenshtein_search_simd<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<
     levenshtein_search_simd_with_opts(needle, haystack, u32::MAX, SearchType::Best, LEVENSHTEIN_COSTS, false)
 }
 
-/// Returns a vector of `Match`s by searching through the text `haystack` for the
+/// Returns an iterator over `Match`s by searching through the text `haystack` for the
 /// pattern `needle` using SIMD acceleration, with extra options.
 ///
 /// Note that overlapping matches may be returned.
@@ -1398,7 +1398,7 @@ pub fn levenshtein_search_simd<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-/// let matches = levenshtein_search_simd_with_opts(b"abc", b"  acb", 1, SearchType::All, RDAMERAU_COSTS, false);
+/// let matches: Vec<Match> = levenshtein_search_simd_with_opts(b"abc", b"  acb", 1, SearchType::All, RDAMERAU_COSTS, false).collect();
 ///
 /// // note: it is possible to end the match at two different positions
 /// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
@@ -1692,7 +1692,7 @@ create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_16x16x8, S
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_nx8x16, SseNx8x16, "sse4.1");
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_nx4x32, SseNx4x32, "sse4.1");
 
-/// Returns a vector of best `Match`s by searching through the text `haystack` for the
+/// Returns an iterator over best `Match`s by searching through the text `haystack` for the
 /// pattern `needle` using SIMD acceleration.
 ///
 /// The best matches are the matches with the lowest Levenshtein distance. Note that overlapping
@@ -1712,7 +1712,7 @@ create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_nx4x32, Ss
 /// # Example
 /// ```
 /// # use triple_accel::*;
-/// let matches = levenshtein_search(b"abc", b"  abd");
+/// let matches: Vec<Match> = levenshtein_search(b"abc", b"  abd").collect();
 ///
 /// // note: it is possible to end the match at two different positions
 /// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);

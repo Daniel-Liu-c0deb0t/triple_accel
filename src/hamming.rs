@@ -46,7 +46,7 @@ pub fn hamming_naive(a: &[u8], b: &[u8]) -> u32 {
     res
 }
 
-/// Returns a vector of best `Match`s by naively searching through the text `haystack`
+/// Returns an iterator over best `Match`s by naively searching through the text `haystack`
 /// for the pattern `needle`.
 ///
 /// This is done by naively counting mismatches at every position in `haystack`.
@@ -61,7 +61,7 @@ pub fn hamming_naive(a: &[u8], b: &[u8]) -> u32 {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::hamming::*;
-/// let matches = hamming_search_naive(b"abc", b"  abd");
+/// let matches: Vec<Match> = hamming_search_naive(b"abc", b"  abd").collect();
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
@@ -69,7 +69,7 @@ pub fn hamming_search_naive<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<dyn
     hamming_search_naive_with_opts(needle, haystack, needle.len() as u32, SearchType::Best)
 }
 
-/// Returns a vector of `Match`s by naively searching through the text `haystack`
+/// Returns an iterator over `Match`s by naively searching through the text `haystack`
 /// for the pattern `needle`, with extra options.
 ///
 /// Only matches with less than `k` mismatches are returned.
@@ -87,7 +87,7 @@ pub fn hamming_search_naive<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<dyn
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::hamming::*;
-/// let matches = hamming_search_naive_with_opts(b"abc", b"  abd", 1, SearchType::All);
+/// let matches: Vec<Match> = hamming_search_naive_with_opts(b"abc", b"  abd", 1, SearchType::All).collect();
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
@@ -389,7 +389,7 @@ pub fn hamming(a: &[u8], b: &[u8]) -> u32 {
     hamming_simd_parallel(a, b)
 }
 
-/// Returns a vector of best `Match`s by searching through the text `haystack`
+/// Returns an iterator over best `Match`s by searching through the text `haystack`
 /// for the pattern `needle` using SIMD.
 ///
 /// This is done by counting mismatches at every position in `haystack`.
@@ -411,7 +411,7 @@ pub fn hamming(a: &[u8], b: &[u8]) -> u32 {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::hamming::*;
-/// let matches = hamming_search_simd(b"abc", b"  abd");
+/// let matches: Vec<Match> = hamming_search_simd(b"abc", b"  abd").collect();
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
@@ -419,7 +419,7 @@ pub fn hamming_search_simd<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<dyn 
     hamming_search_simd_with_opts(needle, haystack, needle.len() as u32, SearchType::Best)
 }
 
-/// Returns a vector of `Match`s by searching through the text `haystack` for the
+/// Returns an iterator over `Match`s by searching through the text `haystack` for the
 /// pattern `needle` using SIMD, with extra options.
 ///
 /// This is done by using SIMD to count mismatches at every position in `haystack`.
@@ -443,7 +443,7 @@ pub fn hamming_search_simd<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<dyn 
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::hamming::*;
-/// let matches = hamming_search_simd_with_opts(b"abc", b"  abd", 1, SearchType::All);
+/// let matches: Vec<Match> = hamming_search_simd_with_opts(b"abc", b"  abd", 1, SearchType::All).collect();
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
@@ -553,7 +553,7 @@ macro_rules! create_hamming_search_simd_core {
 create_hamming_search_simd_core!(hamming_search_simd_core_avx, Avx, "avx2");
 create_hamming_search_simd_core!(hamming_search_simd_core_sse, Sse, "sse4.1");
 
-/// Returns a vector of best `Match`s by searching through the text `haystack`
+/// Returns an iterator over best `Match`s by searching through the text `haystack`
 /// for the pattern `needle` using SIMD.
 ///
 /// This will automatically fall back to a scalar alternative if AVX2 and SSE4.1
@@ -573,7 +573,7 @@ create_hamming_search_simd_core!(hamming_search_simd_core_sse, Sse, "sse4.1");
 /// # Example
 /// ```
 /// # use triple_accel::*;
-/// let matches = hamming_search(b"abc", b"  abd");
+/// let matches: Vec<Match> = hamming_search(b"abc", b"  abd").collect();
 ///
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```

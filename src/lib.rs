@@ -80,7 +80,7 @@
 //! assert!(dist == 1);
 //! ```
 //! In addition to edit distance routines, `triple_accel` also provides search routines. These
-//! routines return a vector of matches that indicate where the `needle` string matches the `haystack`
+//! routines return an iterator over matches that indicate where the `needle` string matches the `haystack`
 //! string. `triple_accel` will attempt to maximize the length of matches that end at the same position.
 //! ```
 //! use triple_accel::*;
@@ -88,7 +88,7 @@
 //! let needle = b"helllo";
 //! let haystack = b"hello world";
 //!
-//! let matches = levenshtein_search(needle, haystack);
+//! let matches: Vec<Match> = levenshtein_search(needle, haystack).collect();
 //! // note: start index is inclusive, end index is exclusive!
 //! assert!(matches == vec![Match{start: 0, end: 5, k: 1}]);
 //! ```
@@ -162,8 +162,7 @@ pub struct Edit {
     pub count: usize
 }
 
-/// An enum representing whether to return all matches, the best matches, or the
-/// first match when searching.
+/// An enum representing whether to return all matches or just the best matches.
 ///
 /// This is used as an argument for searching routines.
 #[derive(Debug, PartialEq, Copy, Clone)]

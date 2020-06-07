@@ -42,11 +42,11 @@ fn bench_rand_hamming_search(c: &mut Criterion) {
         let k = black_box(((*str_len) as u32) / 100);
         let (needle, haystack) = black_box(rand_hamming_needle_haystack(needle_len, *str_len, num_needles, k, &mut rng));
 
-        let res = hamming_search_naive_with_opts(&needle, &haystack, k, SearchType::All);
-        assert!(res == hamming_search_simd_with_opts(&needle, &haystack, k, SearchType::All));
+        let res: Vec<Match> = hamming_search_naive_with_opts(&needle, &haystack, k, SearchType::All).collect();
+        assert!(res == hamming_search_simd_with_opts(&needle, &haystack, k, SearchType::All).collect::<Vec<Match>>());
 
-        group.bench_function(BenchmarkId::new("hamming_search_naive_k", *str_len), |b| b.iter(|| hamming_search_naive_with_opts(&needle, &haystack, k, SearchType::All)));
-        group.bench_function(BenchmarkId::new("hamming_search_simd_k", *str_len), |b| b.iter(|| hamming_search_simd_with_opts(&needle, &haystack, k, SearchType::All)));
+        group.bench_function(BenchmarkId::new("hamming_search_naive_k", *str_len), |b| b.iter(|| hamming_search_naive_with_opts(&needle, &haystack, k, SearchType::All).last()));
+        group.bench_function(BenchmarkId::new("hamming_search_simd_k", *str_len), |b| b.iter(|| hamming_search_simd_with_opts(&needle, &haystack, k, SearchType::All).last()));
     }
 
     group.finish();
@@ -110,11 +110,11 @@ fn bench_rand_levenshtein_search(c: &mut Criterion) {
         let anchored = black_box(false);
         let (needle, haystack) = black_box(rand_levenshtein_needle_haystack(needle_len, *str_len, num_needles, k, &mut rng));
 
-        let res = levenshtein_search_naive_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, anchored);
-        assert!(res == levenshtein_search_simd_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, anchored));
+        let res: Vec<Match> = levenshtein_search_naive_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, anchored).collect();
+        assert!(res == levenshtein_search_simd_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, anchored).collect::<Vec<Match>>());
 
-        group.bench_function(BenchmarkId::new("levenshtein_search_naive_k", *str_len), |b| b.iter(|| levenshtein_search_naive_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, anchored)));
-        group.bench_function(BenchmarkId::new("levenshtein_search_simd_k", *str_len), |b| b.iter(|| levenshtein_search_simd_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, anchored)));
+        group.bench_function(BenchmarkId::new("levenshtein_search_naive_k", *str_len), |b| b.iter(|| levenshtein_search_naive_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, anchored).last()));
+        group.bench_function(BenchmarkId::new("levenshtein_search_simd_k", *str_len), |b| b.iter(|| levenshtein_search_simd_with_opts(&needle, &haystack, k, SearchType::All, LEVENSHTEIN_COSTS, anchored).last()));
     }
 
     group.finish();
