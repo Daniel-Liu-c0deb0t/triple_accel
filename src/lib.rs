@@ -1,7 +1,7 @@
 //! # triple_accel
 //!
-//! Rust edit distance routines accelerated using SIMD, with support for Hamming, Levenshtein, etc.
-//! distances.
+//! Rust edit distance routines accelerated using SIMD. Supports fast Hamming, Levenshtein,
+//! restricted Damerau-Levenshtein, etc. distance calculations and string search.
 //!
 //! Although vectorized SIMD code allows for up to 20-30x speedups over their scalar counterparts,
 //! the difficulty of handling platform-dependent SIMD code makes SIMD routines less attractive.
