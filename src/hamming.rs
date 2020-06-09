@@ -81,7 +81,7 @@ pub fn hamming_search_naive<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<dyn
 /// * `haystack` - text string (slice)
 /// * `k` - number of mismatches allowed
 /// * `search_type` - whether to only return the "best" matches with the lowest Hamming distance, or
-/// the first match that is encountered
+/// all matches
 ///
 /// # Example
 /// ```
@@ -433,8 +433,8 @@ pub fn hamming_search_simd<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<dyn 
 /// * `needle` - pattern string (slice)
 /// * `haystack` - text string (slice)
 /// * `k` - number of mismatches allowed
-/// * `search_type` - whether to only return the "best" matches with the lowest Hamming distance or
-/// the first match that is encountered
+/// * `search_type` - whether to only return the "best" matches with the lowest Hamming distance, or
+/// all matches
 ///
 /// # Panics
 /// * When there are zero/null bytes in the `haystack` string.
@@ -550,7 +550,9 @@ macro_rules! create_hamming_search_simd_core {
 }
 
 // generate different versions for different intrinsics
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_hamming_search_simd_core!(hamming_search_simd_core_avx, Avx, "avx2");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_hamming_search_simd_core!(hamming_search_simd_core_sse, Sse, "sse4.1");
 
 /// Returns an iterator over best `Match`s by searching through the text `haystack`

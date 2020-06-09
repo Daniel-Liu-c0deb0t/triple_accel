@@ -989,19 +989,32 @@ macro_rules! create_levenshtein_simd_core {
 }
 
 // create a version of the functions for each Jewel vector
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_simd_core!(levenshtein_simd_core_avx_1x32x8, traceback_avx_1x32x8, Avx1x32x8, "avx2");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_simd_core!(levenshtein_simd_core_avx_2x32x8, traceback_avx_2x32x8, Avx2x32x8, "avx2");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_simd_core!(levenshtein_simd_core_avx_4x32x8, traceback_avx_4x32x8, Avx4x32x8, "avx2");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_simd_core!(levenshtein_simd_core_avx_8x32x8, traceback_avx_8x32x8, Avx8x32x8, "avx2");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_simd_core!(levenshtein_simd_core_avx_nx16x16, traceback_avx_nx16x16, AvxNx16x16, "avx2");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_simd_core!(levenshtein_simd_core_avx_nx8x32, traceback_avx_nx8x32, AvxNx8x32, "avx2");
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_simd_core!(levenshtein_simd_core_sse_1x16x8, traceback_sse_1x16x8, Sse1x16x8, "sse4.1");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_simd_core!(levenshtein_simd_core_sse_2x16x8, traceback_sse_2x16x8, Sse2x16x8, "sse4.1");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_simd_core!(levenshtein_simd_core_sse_4x16x8, traceback_sse_4x16x8, Sse4x16x8, "sse4.1");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_simd_core!(levenshtein_simd_core_sse_8x16x8, traceback_sse_8x16x8, Sse8x16x8, "sse4.1");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_simd_core!(levenshtein_simd_core_sse_16x16x8, traceback_sse_16x16x8, Sse16x16x8, "sse4.1");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_simd_core!(levenshtein_simd_core_sse_nx8x16, traceback_sse_nx8x16, SseNx8x16, "sse4.1");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_simd_core!(levenshtein_simd_core_sse_nx4x32, traceback_sse_nx4x32, SseNx4x32, "sse4.1");
 
 /// Returns the Levenshtein distance between two strings using SIMD acceleration.
@@ -1166,8 +1179,8 @@ pub fn levenshtein_search_naive<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box
 /// * `needle` - pattern string (slice)
 /// * `haystack` - text string (slice)
 /// * `k` - maximum cost threshold for a match to be returned
-/// * `search_type` - indicates whether to return all matches (within a cost of `k`), the best matches with
-/// the lowest cost, or the first match that meets the threshold `k`
+/// * `search_type` - indicates whether to return all matches (within a cost of `k`), or the best matches with
+/// the lowest cost
 /// * `costs` - `EditCosts` struct for the cost of each edit operation
 /// * `anchored` - whether the `needle` should be anchored to the start of the `haystack` string,
 /// causing any shifts to cost gap edits
@@ -1385,8 +1398,8 @@ pub fn levenshtein_search_simd<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<
 /// * `needle` - pattern string (slice)
 /// * `haystack` - text string (slice)
 /// * `k` - maximum cost threshold for a match to be returned
-/// * `search_type` - indicates whether to return all matches (within a cost of `k`), the best matches with
-/// the lowest cost, or the first match that meets the threshold `k`
+/// * `search_type` - indicates whether to return all matches (within a cost of `k`), or the best matches with
+/// the lowest cost
 /// * `costs` - `EditCosts` struct for the cost of each edit operation
 /// * `anchored` - whether the `needle` should be anchored to the start of the `haystack` string,
 /// causing any shifts to cost gap edits
@@ -1677,19 +1690,32 @@ macro_rules! create_levenshtein_search_simd_core {
 }
 
 // duplicate functions for each Jewel vector type
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_avx_1x32x8, Avx1x32x8, "avx2");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_avx_2x32x8, Avx2x32x8, "avx2");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_avx_4x32x8, Avx4x32x8, "avx2");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_avx_8x32x8, Avx8x32x8, "avx2");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_avx_nx16x16, AvxNx16x16, "avx2");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_avx_nx8x32, AvxNx8x32, "avx2");
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_1x16x8, Sse1x16x8, "sse4.1");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_2x16x8, Sse2x16x8, "sse4.1");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_4x16x8, Sse4x16x8, "sse4.1");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_8x16x8, Sse8x16x8, "sse4.1");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_16x16x8, Sse16x16x8, "sse4.1");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_nx8x16, SseNx8x16, "sse4.1");
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_nx4x32, SseNx4x32, "sse4.1");
 
 /// Returns an iterator over best `Match`s by searching through the text `haystack` for the
