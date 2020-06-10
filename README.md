@@ -84,12 +84,8 @@ of the input strings.
 
 ## Limitations
 
-Due to the use of SIMD intrinsics, there are a few limitations that are important to note:
-
-* Only binary strings that are represented with `u8` bytes are supported. Unicode strings are
-not currently supported.
-* `u8` bytes with the value of zero (null bytes) are not supported. This is because the vectors
-uses zeros as padding.
+Due to the use of SIMD intrinsics, only binary strings that are represented with `u8` bytes
+are supported. Unicode strings are not currently supported.
 
 ## Examples
 `triple_accel` provides a very simple and easy to use framework for common edit distance operations.

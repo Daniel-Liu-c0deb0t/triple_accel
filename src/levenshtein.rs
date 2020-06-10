@@ -478,7 +478,6 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
 /// This will return `None` if the Levenshtein distance between `a` and `b` is greater than the
 /// threshold `k`.
 /// This should be much faster than `levenshtein_naive` and `levenshtein_naive_k`.
-/// Currently, this does not support null bytes/characters in the strings.
 /// Internally, this will automatically use AVX or SSE vectors with 8-bit, 16-bit, or 32-bit elements
 /// to represent anti-diagonals in the dynamic programming matrix for calculating Levenshtein distance.
 /// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to
@@ -488,9 +487,6 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
 /// * `a` - first string (slice)
 /// * `b` - second string (slice)
 /// * `k` - maximum number of edits allowed between `a` and `b`
-///
-/// # Panics
-/// * When there are zero/null bytes in the strings.
 ///
 /// # Example
 /// ```
@@ -516,7 +512,6 @@ pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32) -> Option<u32> {
 /// threshold `k`.
 /// This should be much faster than `levenshtein_naive_with_opts` and
 /// `levenshtein_naive_k_with_opts`.
-/// Currently, this does not support null bytes/characters in the strings.
 /// Internally, this will automatically use AVX or SSE vectors with 8-bit, 16-bit, or 32-bit elements
 /// to represent anti-diagonals in the dynamic programming matrix for calculating Levenshtein distance.
 /// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to
@@ -528,9 +523,6 @@ pub fn levenshtein_simd_k(a: &[u8], b: &[u8], k: u32) -> Option<u32> {
 /// * `k` - maximum number of cost allowed between `a` and `b`
 /// * `trace_on` - whether to return the traceback, the sequence of edits between `a` and `b`
 /// * `costs` - `EditCosts` struct for the cost of each edit operation
-///
-/// # Panics
-/// * When there are zero/null bytes in the strings.
 ///
 /// # Example
 /// ```
@@ -545,9 +537,6 @@ pub fn levenshtein_simd_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool, 
     if a.len() == 0 && b.len() == 0 {
         return if trace_on {Some((0u32, Some(vec![])))} else {Some((0u32, None))};
     }
-
-    check_no_null_bytes(a);
-    check_no_null_bytes(b);
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -1021,16 +1010,12 @@ create_levenshtein_simd_core!(levenshtein_simd_core_sse_nx4x32, traceback_sse_nx
 ///
 /// Note that `levenshtein_exp` may be much faster if the number of edits between the two strings
 /// is expected to be small.
-/// Currently, this does not support null bytes/characters in the strings.
 /// Internally, this will call `levenshtein_simd_k`.
 /// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to a scalar alternative.
 ///
 /// # Arguments
 /// * `a` - first string (slice)
 /// * `b` - second string (slice)
-///
-/// # Panics
-/// * When there are zero/null bytes in the strings.
 ///
 /// # Example
 /// ```
@@ -1047,16 +1032,12 @@ pub fn levenshtein(a: &[u8], b: &[u8]) -> u32 {
 ///
 /// Note that `rdamerau_exp` may be much faster if the number of edits between the two strings
 /// is expected to be small.
-/// Currently, this does not support null bytes/characters in the strings.
 /// Internally, this will call `levenshtein_simd_k_with_opts`.
 /// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to a scalar alternative.
 ///
 /// # Arguments
 /// * `a` - first string (slice)
 /// * `b` - second string (slice)
-///
-/// # Panics
-/// * When there are zero/null bytes in the strings.
 ///
 /// # Example
 /// ```
@@ -1074,7 +1055,6 @@ pub fn rdamerau(a: &[u8], b: &[u8]) -> u32 {
 ///
 /// This may be much more efficient than `levenshtein` if the number of edits between `a` and `b`
 /// is expected to be small.
-/// Currently, this does not support null bytes/characters in the strings.
 /// Internally, this will call `levenshtein_simd_k` with values of `k` determined through
 /// exponential search.
 /// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to a scalar alternative.
@@ -1082,9 +1062,6 @@ pub fn rdamerau(a: &[u8], b: &[u8]) -> u32 {
 /// # Arguments
 /// * `a` - first string (slice)
 /// * `b` - second string (slice)
-///
-/// # Panics
-/// * When there are zero/null bytes in the strings.
 ///
 /// # Example
 /// ```
@@ -1112,7 +1089,6 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8]) -> u32 {
 ///
 /// This may be much more efficient than `rdamerau` if the number of edits between `a` and `b`
 /// is expected to be small.
-/// Currently, this does not support null bytes/characters in the strings.
 /// Internally, this will call `levenshtein_simd_k_with_opts` with values of `k` determined through
 /// exponential search.
 /// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to a scalar alternative.
@@ -1120,9 +1096,6 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8]) -> u32 {
 /// # Arguments
 /// * `a` - first string (slice)
 /// * `b` - second string (slice)
-///
-/// # Panics
-/// * When there are zero/null bytes in the strings.
 ///
 /// # Example
 /// ```
@@ -1356,7 +1329,6 @@ pub fn levenshtein_search_naive_with_opts<'a>(needle: &'a [u8], haystack: &'a [u
 /// best matches may be returned.
 /// If multiple best matches end at the same position, then the longest match is chosen.
 /// This should be much faster than `levenshtein_search_naive`.
-/// Currently, this does not support null bytes/characters in the strings.
 /// Internally, this will automatically use AVX or SSE vectors with 8-bit, 16-bit, or 32-bit elements
 /// to represent anti-diagonals in the dynamic programming matrix for calculating Levenshtein distance.
 /// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to
@@ -1365,9 +1337,6 @@ pub fn levenshtein_search_naive_with_opts<'a>(needle: &'a [u8], haystack: &'a [u
 /// # Arguments
 /// * `needle` - pattern string (slice)
 /// * `haystack` - text string (slice)
-///
-/// # Panics
-/// * When there are zero/null bytes in the strings.
 ///
 /// # Example
 /// ```
@@ -1388,7 +1357,6 @@ pub fn levenshtein_search_simd<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<
 /// Note that overlapping matches may be returned.
 /// If multiple matches end at the same position, then the longest match is chosen.
 /// This should be much faster than `levenshtein_search_naive_with_opts`.
-/// Currently, this does not support null bytes/characters in the strings.
 /// Internally, this will automatically use AVX or SSE vectors with 8-bit, 16-bit, or 32-bit elements
 /// to represent anti-diagonals in the dynamic programming matrix for calculating Levenshtein distance.
 /// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to
@@ -1404,9 +1372,6 @@ pub fn levenshtein_search_simd<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<
 /// * `anchored` - whether the `needle` should be anchored to the start of the `haystack` string,
 /// causing any shifts to cost gap edits
 ///
-/// # Panics
-/// * When there are zero/null bytes in the strings.
-///
 /// # Example
 /// ```
 /// # use triple_accel::*;
@@ -1421,8 +1386,6 @@ pub fn levenshtein_search_simd_with_opts<'a>(needle: &'a [u8], haystack: &'a [u8
         return Box::new(iter::empty());
     }
 
-    check_no_null_bytes(needle);
-    check_no_null_bytes(haystack);
     costs.check_search();
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
@@ -1615,7 +1578,7 @@ macro_rules! create_levenshtein_search_simd_core {
                     haystack_gap_length.shift_left_1_mut(); // zeros are shifted in
 
                     if allow_transpose {
-                        <$jewel>::shift_left_1(&match_mask0, &mut transpose); // reuse transpose
+                        <$jewel>::shift_left_1(&match_mask0, &mut transpose); // reuse transpose, shift in zeros
                         transpose.and_mut(&match_mask0);
                         // ensure that current matches are excluded
                         <$jewel>::andnot(&match_mask1, &transpose, &mut match_mask0); // reuse match_mask0 to represent transpose mask
@@ -1625,7 +1588,6 @@ macro_rules! create_levenshtein_search_simd_core {
                             // dp0 is four diagonals behind the current i
                             dp0.insert_last_1(cmp::min((i as u32 - 3) * (costs.gap_cost as u32) + costs.start_gap_cost as u32, k + 1));
                         }
-                        // last value in dp0 should not matter if we assume no null bytes are in the strings
 
                         length0.shift_left_2_mut();
                         <$jewel>::adds(&dp0, &transpose_cost, &mut transpose);
@@ -1724,16 +1686,12 @@ create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_nx4x32, Ss
 /// The best matches are the matches with the lowest Levenshtein distance. Note that overlapping
 /// best matches may be returned.
 /// If multiple best matches end at the same position, then the longest match is chosen.
-/// Currently, this does not support null bytes/characters in the strings.
 /// Internally, this will call `levenshtein_search_simd`.
 /// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to a scalar alternative.
 ///
 /// # Arguments
 /// * `needle` - pattern string (slice)
 /// * `haystack` - text string (slice)
-///
-/// # Panics
-/// * When there are zero/null bytes in the strings.
 ///
 /// # Example
 /// ```

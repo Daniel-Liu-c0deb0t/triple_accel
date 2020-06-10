@@ -385,6 +385,11 @@ fn test_basic_levenshtein_naive_k_with_opts() {
     res = levenshtein_naive_k_with_opts(a13, b13, 5, false, EditCosts::new(1, 1, 2, None)).unwrap();
     assert!(res.0 == 4);
     assert!(res.1.is_none());
+
+    let a14 = b"abcde";
+    let b14 = b"hello";
+    let res1 = levenshtein_naive_k_with_opts(a14, b14, 1, false, RDAMERAU_COSTS);
+    assert!(res1.is_none());
 }
 
 #[test]
@@ -494,6 +499,47 @@ fn test_basic_levenshtein_simd_k_with_opts() {
     res = levenshtein_simd_k_with_opts(a12, b12, 5, false, EditCosts::new(1, 1, 2, None)).unwrap();
     assert!(res.0 == 4);
     assert!(res.1.is_none());
+
+    let a13 = b"\0";
+    let b13 = b"";
+    res = levenshtein_simd_k_with_opts(a13, b13, 2, false, LEVENSHTEIN_COSTS).unwrap();
+    assert!(res.0 == 1);
+    assert!(res.1.is_none());
+
+    let a14 = b"ab\0de";
+    let b14 = b"a\0bde";
+    res = levenshtein_simd_k_with_opts(a14, b14, 2, false, EditCosts::new(1, 1, 0, Some(1))).unwrap();
+    assert!(res.0 == 1);
+    assert!(res.1.is_none());
+
+    let a15 = b"\0b";
+    let b15 = b"b\0";
+    res = levenshtein_simd_k_with_opts(a15, b15, 2, false, EditCosts::new(1, 1, 0, Some(1))).unwrap();
+    assert!(res.0 == 1);
+    assert!(res.1.is_none());
+
+    let a16 = b"\0";
+    let b16 = b"\0\0";
+    res = levenshtein_simd_k_with_opts(a16, b16, 2, false, LEVENSHTEIN_COSTS).unwrap();
+    assert!(res.0 == 1);
+    assert!(res.1.is_none());
+
+    let a17 = b"\0";
+    let b17 = b"\0";
+    res = levenshtein_simd_k_with_opts(a17, b17, 2, false, EditCosts::new(1, 1, 0, Some(1))).unwrap();
+    assert!(res.0 == 0);
+    assert!(res.1.is_none());
+
+    let a18 = b"\0\0b\0";
+    let b18 = b"\0b\0\0";
+    res = levenshtein_simd_k_with_opts(a18, b18, 2, false, EditCosts::new(1, 1, 0, Some(1))).unwrap();
+    assert!(res.0 == 1);
+    assert!(res.1.is_none());
+
+    let a19 = b"abcde";
+    let b19 = b"hello";
+    let res1 = levenshtein_simd_k_with_opts(a19, b19, 1, false, RDAMERAU_COSTS);
+    assert!(res1.is_none());
 }
 
 #[test]
@@ -712,5 +758,35 @@ fn test_basic_levenshtein_search_simd() {
     let k15 = 4;
     res = levenshtein_search_simd_with_opts(a15, b15, k15, SearchType::All, EditCosts::new(2, 1, 2, None), false).collect();
     assert!(res == vec![Match{start: 3, end: 8, k: 4}]);
+
+    let a16 = b"\0b";
+    let b16 = b"b\0";
+    let k16 = 1;
+    res = levenshtein_search_simd_with_opts(a16, b16, k16, SearchType::All, RDAMERAU_COSTS, true).collect();
+    assert!(res == vec![Match{start: 0, end: 1, k: 1}, Match{start: 0, end: 2, k: 1}]);
+
+    let a17 = b"\0\0";
+    let b17 = b"\0\0";
+    let k17 = 0;
+    res = levenshtein_search_simd_with_opts(a17, b17, k17, SearchType::All, RDAMERAU_COSTS, true).collect();
+    assert!(res == vec![Match{start: 0, end: 2, k: 0}]);
+
+    let a18 = b"testing";
+    let b18 = b"   \0esting";
+    let k18 = 1;
+    res = levenshtein_search_simd_with_opts(a18, b18, k18, SearchType::All, LEVENSHTEIN_COSTS, false).collect();
+    assert!(res == vec![Match{start: 3, end: 10, k: 1}]);
+
+    let a19 = b"\0\0\0";
+    let b19 = b"\0\0";
+    let k19 = 1;
+    res = levenshtein_search_simd_with_opts(a19, b19, k19, SearchType::All, LEVENSHTEIN_COSTS, true).collect();
+    assert!(res == vec![Match{start: 0, end: 2, k: 1}]);
+
+    let a20 = b"\0\0";
+    let b20 = b"   \0\0";
+    let k20 = 0;
+    res = levenshtein_search_simd_with_opts(a20, b20, k20, SearchType::All, RDAMERAU_COSTS, false).collect();
+    assert!(res == vec![Match{start: 3, end: 5, k: 0}]);
 }
 
