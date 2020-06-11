@@ -1133,9 +1133,8 @@ pub fn rdamerau_exp(a: &[u8], b: &[u8]) -> u32 {
 /// Returns an iterator over the best `Match`s by searching through the text `haystack` for the
 /// pattern `needle` using the naive algorithm.
 ///
-/// The best matches are the matches with the lowest Levenshtein distance. Note that overlapping
-/// best matches may be returned.
-/// If multiple best matches end at the same position, then the longest match is chosen.
+/// The best matches are the matches with the lowest Levenshtein distance.
+/// If multiple best matches end at the same position or fully overlap, then the longest match is chosen.
 ///
 /// # Arguments
 /// * `needle` - pattern string (slice)
@@ -1147,8 +1146,7 @@ pub fn rdamerau_exp(a: &[u8], b: &[u8]) -> u32 {
 /// # use triple_accel::levenshtein::*;
 /// let matches: Vec<Match> = levenshtein_search_naive(b"abc", b"  abd").collect();
 ///
-/// // note: it is possible to end the match at two different positions
-/// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
+/// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
 pub fn levenshtein_search_naive<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<dyn Iterator<Item = Match> + 'a> {
     levenshtein_search_naive_with_opts(needle, haystack, u32::MAX, SearchType::Best, LEVENSHTEIN_COSTS, false)
@@ -1165,7 +1163,7 @@ pub fn levenshtein_search_naive<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box
 /// * `haystack` - text string (slice)
 /// * `k` - maximum cost threshold for a match to be returned
 /// * `search_type` - indicates whether to return all matches (within a cost of `k`), or the best matches with
-/// the lowest cost
+/// the lowest cost (additionally, only the longest matches are retained for matches that fully overlap)
 /// * `costs` - `EditCosts` struct for the cost of each edit operation
 /// * `anchored` - whether the `needle` should be anchored to the start of the `haystack` string,
 /// causing any shifts to cost gap edits
@@ -1330,11 +1328,25 @@ pub fn levenshtein_search_naive_with_opts<'a>(needle: &'a [u8], haystack: &'a [u
 
     if search_type == SearchType::Best {
         // estimate the number of Matches
-        let mut res_vec = Vec::with_capacity((iter_len + needle_len) / needle_len);
-        res.for_each(|m| {
-            res_vec.push(m.0);
+        let mut res_vec = Vec::with_capacity(iter_len / needle_len);
+
+        for m in res {
+            match res_vec.len() {
+                0 => res_vec.push(m.0),
+                _ => {
+                    let last = res_vec.last_mut().unwrap();
+
+                    // replace previous if fully overlapping
+                    if m.0.start <= last.start {
+                        *last = m.0;
+                    }else{
+                        res_vec.push(m.0);
+                    }
+                }
+            }
+
             curr_k = m.1;
-        });
+        }
 
         return Box::new(res_vec.into_iter().filter(move |m| m.k == curr_k));
     }
@@ -1345,9 +1357,8 @@ pub fn levenshtein_search_naive_with_opts<'a>(needle: &'a [u8], haystack: &'a [u
 /// Returns an iterator over the best `Match`s by searching through the text `haystack` for the
 /// pattern `needle` using SIMD acceleration.
 ///
-/// The best matches are the matches with the lowest Levenshtein distance. Note that overlapping
-/// best matches may be returned.
-/// If multiple best matches end at the same position, then the longest match is chosen.
+/// The best matches are the matches with the lowest Levenshtein distance.
+/// If multiple best matches end at the same position or fully overlap, then the longest match is chosen.
 /// This should be much faster than `levenshtein_search_naive`.
 /// Internally, this will automatically use AVX or SSE vectors with 8-bit, 16-bit, or 32-bit elements
 /// to represent anti-diagonals in the dynamic programming matrix for calculating Levenshtein distance.
@@ -1364,8 +1375,7 @@ pub fn levenshtein_search_naive_with_opts<'a>(needle: &'a [u8], haystack: &'a [u
 /// # use triple_accel::levenshtein::*;
 /// let matches: Vec<Match> = levenshtein_search_simd(b"abc", b"  abd").collect();
 ///
-/// // note: it is possible to end the match at two different positions
-/// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
+/// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
 pub fn levenshtein_search_simd<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<dyn Iterator<Item = Match> + 'a> {
     levenshtein_search_simd_with_opts(needle, haystack, u32::MAX, SearchType::Best, LEVENSHTEIN_COSTS, false)
@@ -1387,7 +1397,7 @@ pub fn levenshtein_search_simd<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<
 /// * `haystack` - text string (slice)
 /// * `k` - maximum cost threshold for a match to be returned
 /// * `search_type` - indicates whether to return all matches (within a cost of `k`), or the best matches with
-/// the lowest cost
+/// the lowest cost (additionally, only the longest matches are retained for matches that fully overlap)
 /// * `costs` - `EditCosts` struct for the cost of each edit operation
 /// * `anchored` - whether the `needle` should be anchored to the start of the `haystack` string,
 /// causing any shifts to cost gap edits
@@ -1664,11 +1674,25 @@ macro_rules! create_levenshtein_search_simd_core {
 
             if search_type == SearchType::Best {
                 // estimate the number of Matches
-                let mut res_vec = Vec::with_capacity(len / needle_len);
-                res.for_each(|m| {
-                    res_vec.push(m.0);
+                let mut res_vec = Vec::with_capacity((len - needle_len) / needle_len);
+
+                for m in res {
+                    match res_vec.len() {
+                        0 => res_vec.push(m.0),
+                        _ => {
+                            let last = res_vec.last_mut().unwrap();
+
+                            // replace previous if fully overlapping
+                            if m.0.start <= last.start {
+                                *last = m.0;
+                            }else{
+                                res_vec.push(m.0);
+                            }
+                        }
+                    }
+
                     curr_k = m.1;
-                });
+                }
 
                 // only retain matches with the lowest k
                 return Box::new(res_vec.into_iter().filter(move |m| m.k == curr_k));
@@ -1711,9 +1735,8 @@ create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_nx4x32, Ss
 /// Returns an iterator over best `Match`s by searching through the text `haystack` for the
 /// pattern `needle` using SIMD acceleration.
 ///
-/// The best matches are the matches with the lowest Levenshtein distance. Note that overlapping
-/// best matches may be returned.
-/// If multiple best matches end at the same position, then the longest match is chosen.
+/// The best matches are the matches with the lowest Levenshtein distance.
+/// If multiple best matches end at the same position or fully overlap, then the longest match is chosen.
 /// Internally, this will call `levenshtein_search_simd`.
 /// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to a scalar alternative.
 ///
@@ -1726,8 +1749,7 @@ create_levenshtein_search_simd_core!(levenshtein_search_simd_core_sse_nx4x32, Ss
 /// # use triple_accel::*;
 /// let matches: Vec<Match> = levenshtein_search(b"abc", b"  abd").collect();
 ///
-/// // note: it is possible to end the match at two different positions
-/// assert!(matches == vec![Match{start: 2, end: 4, k: 1}, Match{start: 2, end: 5, k: 1}]);
+/// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
 pub fn levenshtein_search<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<dyn Iterator<Item = Match> + 'a> {
     levenshtein_search_simd(needle, haystack)

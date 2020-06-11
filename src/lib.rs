@@ -77,7 +77,8 @@
 //! ```
 //! In addition to edit distance routines, `triple_accel` also provides search routines. These
 //! routines return an iterator over matches that indicate where the `needle` string matches the `haystack`
-//! string. `triple_accel` will attempt to maximize the length of matches that end at the same position.
+//! string. `triple_accel` will attempt to maximize the length of matches that end at the same position and
+//! remove shorter matches when some matches fully overlap.
 //! ```
 //! use triple_accel::*;
 //!
