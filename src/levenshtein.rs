@@ -315,10 +315,16 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
     };
     let allow_transpose = costs.transpose_cost.is_some();
     // upper bound on the number of edits, in case k is too large
-    let max_k = cmp::min((a_new_len as u32) * mismatch_cost, ((a_new_len << 1) as u32) * (start_gap_cost + gap_cost));
-    let max_k = cmp::min(k, max_k + ((b_new_len - a_new_len) as u32) * (start_gap_cost + gap_cost));
+    let max_k = cmp::min((a_new_len as u32) * mismatch_cost,
+                         ((a_new_len as u32) << 1) * gap_cost
+                         + if a_new_len == 0 {0} else {start_gap_cost
+                             + if b_new_len == a_new_len {start_gap_cost} else {0}});
+    let max_k = cmp::min(k,
+                         max_k + ((b_new_len - a_new_len) as u32) * gap_cost
+                         + if b_new_len == a_new_len {0} else {start_gap_cost});
     // farthest we can stray from the main diagonal
-    let unit_k = (max_k / gap_cost) as usize;
+    // have to start at least one gap
+    let unit_k = (max_k.saturating_sub(start_gap_cost) / gap_cost) as usize;
 
     if b_new_len - a_new_len > unit_k {
         return None;
@@ -543,10 +549,16 @@ pub fn levenshtein_simd_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool, 
         let min_len = cmp::min(a.len(), b.len()) as u32;
         let max_len = cmp::max(a.len(), b.len()) as u32;
         // upper bound on the number of edits, in case k is too large
-        let max_k = cmp::min(min_len * (costs.mismatch_cost as u32), (min_len << 1) * (costs.start_gap_cost as u32 + costs.gap_cost as u32));
-        let max_k = cmp::min(k, max_k + (max_len - min_len) * (costs.start_gap_cost as u32 + costs.gap_cost as u32));
+        let max_k = cmp::min(min_len * (costs.mismatch_cost as u32),
+                             (min_len << 1) * (costs.gap_cost as u32)
+                             + if min_len == 0 {0} else {costs.start_gap_cost as u32
+                                 + if max_len == min_len {costs.start_gap_cost as u32} else {0}});
+        let max_k = cmp::min(k,
+                             max_k + (max_len - min_len) * (costs.gap_cost as u32)
+                             + if max_len == min_len {0} else {costs.start_gap_cost as u32});
         // farthest we can stray from the main diagonal
-        let unit_k = cmp::min(max_k / (costs.gap_cost as u32), max_len);
+        // have to start at least one gap
+        let unit_k = cmp::min(max_k.saturating_sub(costs.start_gap_cost as u32) / (costs.gap_cost as u32), max_len);
 
         // note: do not use the MAX value, because it indicates overflow/inaccuracy
         if cfg!(feature = "jewel-avx") && is_x86_feature_detected!("avx2") {
@@ -602,7 +614,7 @@ macro_rules! create_levenshtein_simd_core {
             let a_len = a.len();
             let b = if swap {a_old} else {b_old};
             let b_len = b.len();
-            let unit_k = cmp::min((k / (costs.gap_cost as u32)) as usize, b_len);
+            let unit_k = cmp::min((k.saturating_sub(costs.start_gap_cost as u32) / (costs.gap_cost as u32)) as usize, b_len);
 
             if b_len - a_len > unit_k {
                 return None;
@@ -1179,10 +1191,18 @@ pub fn levenshtein_search_naive_with_opts<'a>(needle: &'a [u8], haystack: &'a [u
     costs.check_search();
 
     let len = needle_len + 1;
-    let max_k = cmp::min(k, cmp::min((needle_len as u32) * (LEVENSHTEIN_COSTS.mismatch_cost as u32),
-                                     (needle_len as u32) * (LEVENSHTEIN_COSTS.start_gap_cost as u32 + LEVENSHTEIN_COSTS.gap_cost as u32)));
+    // it is fine if max_k is not accurate if needle_len > haystack_len
+    let max_k = cmp::min(k, if needle_len <= haystack_len {
+        cmp::min((needle_len as u32) * (costs.mismatch_cost as u32),
+                 (needle_len as u32) * (costs.gap_cost as u32)
+                 + if needle_len == 0 {0} else {costs.start_gap_cost as u32})
+    }else{
+        u32::MAX
+    });
     let iter_len = if anchored {
-        cmp::min(haystack_len, needle_len + (max_k as usize) / (costs.gap_cost as usize))
+        // start_gap_cost must be incurred at least once
+        cmp::min(haystack_len, needle_len.saturating_add(
+                (max_k.saturating_sub(costs.start_gap_cost as u32) as usize) / (costs.gap_cost as usize)))
     }else{
         haystack_len
     };
@@ -1390,9 +1410,16 @@ pub fn levenshtein_search_simd_with_opts<'a>(needle: &'a [u8], haystack: &'a [u8
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
-        let max_k = cmp::min(k, cmp::min((needle.len() as u32) * (LEVENSHTEIN_COSTS.mismatch_cost as u32),
-                                         (needle.len() as u32) * (LEVENSHTEIN_COSTS.start_gap_cost as u32 + LEVENSHTEIN_COSTS.gap_cost as u32)));
-        let unit_k = max_k / (costs.gap_cost as u32);
+        let min_len = cmp::min(needle.len(), haystack.len()) as u32;
+        let max_k = cmp::min(min_len * (costs.mismatch_cost as u32),
+                             min_len * (costs.gap_cost as u32)
+                             + if min_len == 0 || needle.len() > haystack.len() {0} else {costs.start_gap_cost as u32});
+        let max_k = cmp::min(k, max_k +
+                             if needle.len() > haystack.len() {
+                                 (costs.gap_cost as u32) * ((needle.len() - haystack.len()) as u32)
+                                     + (costs.start_gap_cost as u32)
+                             } else {0});
+        let unit_k = max_k.saturating_sub(costs.start_gap_cost as u32) / (costs.gap_cost as u32);
         // either the length of the match or the number of edits may exceed the maximum
         // available int size; additionally, MAX value is used to indicate overflow
         let upper_bound = cmp::max(needle.len() as u32 + unit_k, max_k + 1);
@@ -1467,7 +1494,8 @@ macro_rules! create_levenshtein_search_simd_core {
 
             // the suffix of haystack can be ignored if needle must be anchored
             let len = if anchored {
-                needle_len + cmp::min(haystack_len, needle_len + (k as usize) / (costs.gap_cost as usize))
+                needle_len + cmp::min(haystack_len, needle_len
+                                      + (k.saturating_sub(costs.start_gap_cost as u32) as usize) / (costs.gap_cost as usize))
             }else{
                 needle_len + haystack_len
             };
