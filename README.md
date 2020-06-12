@@ -60,7 +60,6 @@ cargo doc
 ```
 
 ## Features
-
 This library provides routines for both searching for some needle string in a haystack string
 and calculating the edit distance between two strings. Hamming distance (mismatches only),
 Levenshtein distance (mismatches + gaps), and restricted Damerau-Levenshtein distance
@@ -83,7 +82,6 @@ in the vectors are selected at runtime for maximum efficiency and accuracy, give
 of the input strings.
 
 ## Limitations
-
 Due to the use of SIMD intrinsics, only binary strings that are represented with `u8` bytes
 are supported. Unicode strings are not currently supported.
 
@@ -111,6 +109,10 @@ let b = b"abcd";
 let dist = levenshtein_exp(a, b);
 assert!(dist == 1);
 ```
+This uses exponential search to estimate the number of edits between `a` and `b`, which makes it
+more efficient than the alternative `levenshtein` function when the number of edits between `a`
+and `b` is low.
+
 In addition to edit distance routines, `triple_accel` also provides search routines. These routines
 return an iterator over matches that indicate where the `needle` string matches the `haystack` string.
 `triple_accel` will attempt to maximize the length of matches that end at the same position and remove

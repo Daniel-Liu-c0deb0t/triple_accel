@@ -51,6 +51,8 @@ pub fn hamming_naive(a: &[u8], b: &[u8]) -> u32 {
 ///
 /// This is done by naively counting mismatches at every position in `haystack`.
 /// Only the matches with the lowest Hamming distance are returned.
+/// Each returned `Match` requires at least half or more bytes of the `needle` to match
+/// somewhere in the `haystack`.
 /// The length of `needle` must be less than or equal to the length of `haystack`.
 ///
 /// # Arguments
@@ -66,7 +68,7 @@ pub fn hamming_naive(a: &[u8], b: &[u8]) -> u32 {
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
 pub fn hamming_search_naive<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<dyn Iterator<Item = Match> + 'a> {
-    hamming_search_naive_with_opts(needle, haystack, needle.len() as u32, SearchType::Best)
+    hamming_search_naive_with_opts(needle, haystack, ((needle.len() as u32) >> 1) + ((needle.len() as u32) & 1), SearchType::Best)
 }
 
 /// Returns an iterator over `Match`s by naively searching through the text `haystack`
@@ -397,6 +399,8 @@ pub fn hamming(a: &[u8], b: &[u8]) -> u32 {
 /// are not supported.
 /// Null bytes/characters are not supported.
 /// The length of `needle` must be less than or equal to the length of `haystack`.
+/// Each returned `Match` requires at least half or more bytes of the `needle` to match
+/// somwhere in the `haystack`.
 /// Only the matches with the lowest Hamming distance are returned.
 /// This should be faster than `hamming_search_naive`.
 ///
@@ -416,7 +420,7 @@ pub fn hamming(a: &[u8], b: &[u8]) -> u32 {
 /// assert!(matches == vec![Match{start: 2, end: 5, k: 1}]);
 /// ```
 pub fn hamming_search_simd<'a>(needle: &'a [u8], haystack: &'a [u8]) -> Box<dyn Iterator<Item = Match> + 'a> {
-    hamming_search_simd_with_opts(needle, haystack, needle.len() as u32, SearchType::Best)
+    hamming_search_simd_with_opts(needle, haystack, ((needle.len() as u32) >> 1) + ((needle.len() as u32) & 1), SearchType::Best)
 }
 
 /// Returns an iterator over `Match`s by searching through the text `haystack` for the
@@ -562,6 +566,8 @@ create_hamming_search_simd_core!(hamming_search_simd_core_sse, Sse, "sse4.1");
 /// are not supported.
 /// Null bytes/characters are not supported.
 /// The length of `needle` must be less than or equal to the length of `haystack`.
+/// Each returned `Match` requires at least half or more bytes of the `needle` to match
+/// somewhere in the `haystack`.
 /// Only the matches with the lowest Hamming distance are returned.
 /// Internally, this calls `hamming_search_simd`.
 ///
