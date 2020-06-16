@@ -18,26 +18,26 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Run tests AVX2/8-bit
-      run: cargo test --verbose --no-default-features --features "jewel-avx,jewel-8bit" -- --nocapture
+      run: cargo test --verbose --no-default-features --features "jewel-avx jewel-8bit" -- --nocapture
     - name: Run bench tests AVX2/8-bit
-      run: cargo test --bench rand_benchmarks --verbose --no-default-features --features "jewel-avx,jewel-8bit" -- --nocapture
+      run: cargo test --bench rand_benchmarks --verbose --no-default-features --features "jewel-avx jewel-8bit" -- --nocapture
     - name: Run tests AVX2/16-bit
-      run: cargo test --verbose --no-default-features --features "jewel-avx,jewel-16bit" -- --nocapture
+      run: cargo test --verbose --no-default-features --features "jewel-avx jewel-16bit" -- --nocapture
     - name: Run bench tests AVX2/16-bit
-      run: cargo test --bench rand_benchmarks --verbose --no-default-features --features "jewel-avx,jewel-16bit" -- --nocapture
+      run: cargo test --bench rand_benchmarks --verbose --no-default-features --features "jewel-avx jewel-16bit" -- --nocapture
     - name: Run tests AVX2/32-bit
-      run: cargo test --verbose --no-default-features --features "jewel-avx,jewel-32bit" -- --nocapture
+      run: cargo test --verbose --no-default-features --features "jewel-avx jewel-32bit" -- --nocapture
     - name: Run bench tests AVX2/32-bit
-      run: cargo test --bench rand_benchmarks --verbose --no-default-features --features "jewel-avx,jewel-32bit" -- --nocapture
+      run: cargo test --bench rand_benchmarks --verbose --no-default-features --features "jewel-avx jewel-32bit" -- --nocapture
     - name: Run tests SSE4.1/8-bit
-      run: cargo test --verbose --no-default-features --features "jewel-sse,jewel-8bit" -- --nocapture
+      run: cargo test --verbose --no-default-features --features "jewel-sse jewel-8bit" -- --nocapture
     - name: Run bench tests SSE4.1/8-bit
-      run: cargo test --bench rand_benchmarks --verbose --no-default-features --features "jewel-sse,jewel-8bit" -- --nocapture
+      run: cargo test --bench rand_benchmarks --verbose --no-default-features --features "jewel-sse jewel-8bit" -- --nocapture
     - name: Run tests SSE4.1/16-bit
-      run: cargo test --verbose --no-default-features --features "jewel-sse,jewel-16bit" -- --nocapture
+      run: cargo test --verbose --no-default-features --features "jewel-sse jewel-16bit" -- --nocapture
     - name: Run bench tests SSE4.1/16-bit
-      run: cargo test --bench rand_benchmarks --verbose --no-default-features --features "jewel-sse,jewel-16bit" -- --nocapture
+      run: cargo test --bench rand_benchmarks --verbose --no-default-features --features "jewel-sse jewel-16bit" -- --nocapture
     - name: Run tests SSE4.1/32-bit
-      run: cargo test --verbose --no-default-features --features "jewel-sse,jewel-32bit" -- --nocapture
+      run: cargo test --verbose --no-default-features --features "jewel-sse jewel-32bit" -- --nocapture
     - name: Run bench tests SSE4.1/32-bit
-      run: cargo test --bench rand_benchmarks --verbose --no-default-features --features "jewel-sse,jewel-32bit" -- --nocapture
+      run: cargo test --bench rand_benchmarks --verbose --no-default-features --features "jewel-sse jewel-32bit" -- --nocapture
