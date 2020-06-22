@@ -602,7 +602,7 @@ macro_rules! create_levenshtein_simd_core {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         #[target_feature(enable = $target)]
         unsafe fn $name(a_old: &[u8], b_old: &[u8], k: u32, trace_on: bool, costs: EditCosts) -> Option<(u32, Option<Vec<Edit>>)> {
-            #[cfg(debug_assertions)]
+            #[cfg(feature = "debug")]
             {
                 println!("Debug: Levenshtein Jewel vector type {} for target {}.", stringify!($jewel), stringify!($target));
             }
@@ -1526,7 +1526,7 @@ macro_rules! create_levenshtein_search_simd_core {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         #[target_feature(enable = $target)]
         unsafe fn $name<'a>(needle: &'a [u8], haystack: &'a [u8], k: u32, search_type: SearchType, costs: EditCosts, anchored: bool) -> Box<dyn Iterator<Item = Match> + 'a> {
-            #[cfg(debug_assertions)]
+            #[cfg(feature = "debug")]
             {
                 println!("Debug: Levenshtein search Jewel vector type {} for target {}.", stringify!($jewel), stringify!($target));
             }

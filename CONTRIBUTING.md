@@ -11,3 +11,4 @@ should return the same result. Remember to add tests for new features!
 should be added, if necessary. Performance is very important in this library!
 * Use a similar code style as the current code for pull requests.
 * It may be helpful to inspect the LLVM-IR or assembly output by using `build_ir_asm.sh`.
+* It may be helpful to use the debug feature flag through `--features "debug"` to get debug output.
