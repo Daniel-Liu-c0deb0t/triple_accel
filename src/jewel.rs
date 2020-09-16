@@ -421,37 +421,41 @@ macro_rules! create_avx_nx32x8 {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                unsafe {
-                    #![target_feature(enable = "avx2")]
-                    write!(f, "[")?;
+                #[cfg(target_feature = "avx2")]
+                {
+                    unsafe {
+                        write!(f, "[")?;
 
-                    let mut arr = [0u8; 32];
-                    let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
+                        let mut arr = [0u8; 32];
+                        let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
 
-                    for i in 0..(self.v.len() - 1) {
-                        _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(i));
+                        for i in 0..(self.v.len() - 1) {
+                            _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(i));
 
-                        for j in 0..32 {
-                            write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                            for j in 0..32 {
+                                write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                            }
                         }
-                    }
 
-                    // leftover elements
+                        // leftover elements
 
-                    _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
+                        _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
 
-                    let start = (self.v.len() - 1) << 5;
+                        let start = (self.v.len() - 1) << 5;
 
-                    for i in 0..(self.upper_bound() - start) {
-                        if i == self.upper_bound() - start - 1 {
-                            write!(f, "{:>3}", *arr.get_unchecked(i))?;
-                        }else{
-                            write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                        for i in 0..(self.upper_bound() - start) {
+                            if i == self.upper_bound() - start - 1 {
+                                write!(f, "{:>3}", *arr.get_unchecked(i))?;
+                            }else{
+                                write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                            }
                         }
-                    }
 
-                    write!(f, "]")
+                        return write!(f, "]");
+                    }
                 }
+
+                write!(f, "")
             }
         }
     };
@@ -788,37 +792,41 @@ impl Jewel for AvxNx16x16 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 impl fmt::Display for AvxNx16x16 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        unsafe {
-            #![target_feature(enable = "avx2")]
-            write!(f, "[")?;
+        #[cfg(target_feature = "avx2")]
+        {
+            unsafe {
+                write!(f, "[")?;
 
-            let mut arr = [0u16; 16];
-            let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
+                let mut arr = [0u16; 16];
+                let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
 
-            for i in 0..(self.v.len() - 1) {
-                _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(i));
+                for i in 0..(self.v.len() - 1) {
+                    _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(i));
 
-                for j in 0..16 {
-                    write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                    for j in 0..16 {
+                        write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                    }
                 }
-            }
 
-            // leftover elements
+                // leftover elements
 
-            _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
+                _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
 
-            let start = (self.v.len() - 1) << 4;
+                let start = (self.v.len() - 1) << 4;
 
-            for i in 0..(self.upper_bound() - start) {
-                if i == self.upper_bound() - start - 1 {
-                    write!(f, "{:>3}", *arr.get_unchecked(i))?;
-                }else{
-                    write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                for i in 0..(self.upper_bound() - start) {
+                    if i == self.upper_bound() - start - 1 {
+                        write!(f, "{:>3}", *arr.get_unchecked(i))?;
+                    }else{
+                        write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                    }
                 }
-            }
 
-            write!(f, "]")
+                return write!(f, "]");
+            }
         }
+
+        write!(f, "")
     }
 }
 
@@ -1160,37 +1168,41 @@ impl Jewel for AvxNx8x32 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 impl fmt::Display for AvxNx8x32 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        unsafe {
-            #![target_feature(enable = "avx2")]
-            write!(f, "[")?;
+        #[cfg(target_feature = "avx2")]
+        {
+            unsafe {
+                write!(f, "[")?;
 
-            let mut arr = [0u32; 8];
-            let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
+                let mut arr = [0u32; 8];
+                let arr_ptr = arr.as_mut_ptr() as *mut __m256i;
 
-            for i in 0..(self.v.len() - 1) {
-                _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(i));
+                for i in 0..(self.v.len() - 1) {
+                    _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(i));
 
-                for j in 0..8 {
-                    write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                    for j in 0..8 {
+                        write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                    }
                 }
-            }
 
-            // leftover elements
+                // leftover elements
 
-            _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
+                _mm256_storeu_si256(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
 
-            let start = (self.v.len() - 1) << 3;
+                let start = (self.v.len() - 1) << 3;
 
-            for i in 0..(self.upper_bound() - start) {
-                if i == self.upper_bound() - start - 1 {
-                    write!(f, "{:>3}", *arr.get_unchecked(i))?;
-                }else{
-                    write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                for i in 0..(self.upper_bound() - start) {
+                    if i == self.upper_bound() - start - 1 {
+                        write!(f, "{:>3}", *arr.get_unchecked(i))?;
+                    }else{
+                        write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                    }
                 }
-            }
 
-            write!(f, "]")
+                return write!(f, "]");
+            }
         }
+
+        write!(f, "")
     }
 }
 
@@ -1496,37 +1508,41 @@ macro_rules! create_sse_nx16x8 {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                unsafe {
-                    #![target_feature(enable = "sse4.1")]
-                    write!(f, "[")?;
+                #[cfg(target_feature = "sse4.1")]
+                {
+                    unsafe {
+                        write!(f, "[")?;
 
-                    let mut arr = [0u8; 16];
-                    let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
+                        let mut arr = [0u8; 16];
+                        let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
 
-                    for i in 0..(self.v.len() - 1) {
-                        _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(i));
+                        for i in 0..(self.v.len() - 1) {
+                            _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(i));
 
-                        for j in 0..16 {
-                            write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                            for j in 0..16 {
+                                write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                            }
                         }
-                    }
 
-                    // leftover elements
+                        // leftover elements
 
-                    _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
+                        _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
 
-                    let start = (self.v.len() - 1) << 4;
+                        let start = (self.v.len() - 1) << 4;
 
-                    for i in 0..(self.upper_bound() - start) {
-                        if i == self.upper_bound() - start - 1 {
-                            write!(f, "{:>3}", *arr.get_unchecked(i))?;
-                        }else{
-                            write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                        for i in 0..(self.upper_bound() - start) {
+                            if i == self.upper_bound() - start - 1 {
+                                write!(f, "{:>3}", *arr.get_unchecked(i))?;
+                            }else{
+                                write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                            }
                         }
-                    }
 
-                    write!(f, "]")
+                        return write!(f, "]");
+                    }
                 }
+
+                write!(f, "")
             }
         }
     };
@@ -1839,37 +1855,41 @@ impl Jewel for SseNx8x16 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 impl fmt::Display for SseNx8x16 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        unsafe {
-            #![target_feature(enable = "sse4.1")]
-            write!(f, "[")?;
+        #[cfg(target_feature = "sse4.1")]
+        {
+            unsafe {
+                write!(f, "[")?;
 
-            let mut arr = [0u16; 8];
-            let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
+                let mut arr = [0u16; 8];
+                let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
 
-            for i in 0..(self.v.len() - 1) {
-                _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(i));
+                for i in 0..(self.v.len() - 1) {
+                    _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(i));
 
-                for j in 0..8 {
-                    write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                    for j in 0..8 {
+                        write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                    }
                 }
-            }
 
-            // leftover elements
+                // leftover elements
 
-            _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
+                _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
 
-            let start = (self.v.len() - 1) << 3;
+                let start = (self.v.len() - 1) << 3;
 
-            for i in 0..(self.upper_bound() - start) {
-                if i == self.upper_bound() - start - 1 {
-                    write!(f, "{:>3}", *arr.get_unchecked(i))?;
-                }else{
-                    write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                for i in 0..(self.upper_bound() - start) {
+                    if i == self.upper_bound() - start - 1 {
+                        write!(f, "{:>3}", *arr.get_unchecked(i))?;
+                    }else{
+                        write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                    }
                 }
-            }
 
-            write!(f, "]")
+                return write!(f, "]");
+            }
         }
+
+        write!(f, "")
     }
 }
 
@@ -2186,37 +2206,41 @@ impl Jewel for SseNx4x32 {
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 impl fmt::Display for SseNx4x32 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        unsafe {
-            #![target_feature(enable = "sse4.1")]
-            write!(f, "[")?;
+        #[cfg(target_feature = "sse4.1")]
+        {
+            unsafe {
+                write!(f, "[")?;
 
-            let mut arr = [0u32; 4];
-            let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
+                let mut arr = [0u32; 4];
+                let arr_ptr = arr.as_mut_ptr() as *mut __m128i;
 
-            for i in 0..(self.v.len() - 1) {
-                _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(i));
+                for i in 0..(self.v.len() - 1) {
+                    _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(i));
 
-                for j in 0..4 {
-                    write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                    for j in 0..4 {
+                        write!(f, "{:>3}, ", *arr.get_unchecked(j))?;
+                    }
                 }
-            }
 
-            // leftover elements
+                // leftover elements
 
-            _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
+                _mm_storeu_si128(arr_ptr, *self.v.get_unchecked(self.v.len() - 1));
 
-            let start = (self.v.len() - 1) << 2;
+                let start = (self.v.len() - 1) << 2;
 
-            for i in 0..(self.upper_bound() - start) {
-                if i == self.upper_bound() - start - 1 {
-                    write!(f, "{:>3}", *arr.get_unchecked(i))?;
-                }else{
-                    write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                for i in 0..(self.upper_bound() - start) {
+                    if i == self.upper_bound() - start - 1 {
+                        write!(f, "{:>3}", *arr.get_unchecked(i))?;
+                    }else{
+                        write!(f, "{:>3}, ", *arr.get_unchecked(i))?;
+                    }
                 }
-            }
 
-            write!(f, "]")
+                return write!(f, "]");
+            }
         }
+
+        write!(f, "")
     }
 }
 
