@@ -102,11 +102,11 @@ pub fn levenshtein_naive<T: PartialEq>(a: &[T], b: &[T]) -> u32 {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-/// let dist = levenstein_native_str("abc", "ab");
+/// let dist = levenstein_naive_str("abc", "ab");
 ///
 /// assert!(dist == 1);
 /// ```
-pub fn levenstein_native_str(a: &str, b: &str) -> u32 {
+pub fn levenstein_naive_str(a: &str, b: &str) -> u32 {
     let a: Vec<char> = a.chars().collect();
     let b: Vec<char> = b.chars().collect();
     levenshtein_naive(&a, &b)
@@ -502,6 +502,52 @@ pub fn levenshtein_naive_k_with_opts<T>(a: &[T], b: &[T], k: u32, trace_on: bool
 
     res.reverse();
     Some((dp1[hi - lo - 1], Some(res)))
+}
+
+fn translate_str(chars: &mut Vec<char>, s: &str) -> Option<Vec<u8>> {
+    s.chars().map(|c| match chars.iter().position(|&d| c == d) {
+        Some(i) => Some(i as u8),
+        None => {
+            let idx = chars.len();
+            if idx < 256 {
+                chars.push(c);
+                Some(idx as u8)
+            } else {
+                None
+            }
+        }
+    }).collect()
+}
+
+fn all_ascii(s: &str) -> bool {
+    s.bytes().fold(0, |a, b| a | b) & 0x80 != 0
+}
+
+/// Returns the Levenshtein distance, bounded by a cost threshold `k`, between two utf8 encoded strings, using
+/// SIMD acceleration.
+/// # Arguments
+/// * `a` - first string (&str)
+/// * `b` - second string (&str)
+/// * `k` - maximum number of edits allowed between `a` and `b`
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+/// # use triple_accel::levenshtein::*;
+/// let dist = levenshtein_simd_k_str("abc", "ab", 1);
+///
+/// assert!(dist.unwrap() == 1);
+/// ```
+pub fn levenshtein_simd_k_str(a: &str, b: &str, k: u32) -> Option<u32> {
+    if all_ascii(a) && all_ascii(b) {
+        levenshtein_simd_k(a.as_bytes(), b.as_bytes(), k)
+    } else {
+        let mut chars = Vec::with_capacity(256);
+
+        let a = translate_str(&mut chars, a)?;
+        let b = translate_str(&mut chars, b)?;
+        levenshtein_simd_k(&a, &b, k)
+    }
 }
 
 /// Returns the Levenshtein distance, bounded by a cost threshold `k`, between two strings, using
