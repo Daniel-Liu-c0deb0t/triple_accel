@@ -519,10 +519,6 @@ fn translate_str(chars: &mut Vec<char>, s: &str) -> Option<Vec<u8>> {
     }).collect()
 }
 
-fn all_ascii(s: &str) -> bool {
-    s.bytes().fold(0, |a, b| a | b) & 0x80 != 0
-}
-
 /// Returns the Levenshtein distance, bounded by a cost threshold `k`, between two utf8 encoded strings, using
 /// SIMD acceleration.
 /// # Arguments
@@ -539,7 +535,7 @@ fn all_ascii(s: &str) -> bool {
 /// assert!(dist.unwrap() == 1);
 /// ```
 pub fn levenshtein_simd_k_str(a: &str, b: &str, k: u32) -> Option<u32> {
-    if all_ascii(a) && all_ascii(b) {
+    if a.is_ascii() && b.is_ascii() {
         levenshtein_simd_k(a.as_bytes(), b.as_bytes(), k)
     } else {
         let mut chars = Vec::with_capacity(256);
