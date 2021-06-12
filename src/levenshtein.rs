@@ -88,8 +88,28 @@ pub const RDAMERAU_COSTS: EditCosts = EditCosts{mismatch_cost: 1, gap_cost: 1, s
 ///
 /// assert!(dist == 1);
 /// ```
-pub fn levenshtein_naive(a: &[u8], b: &[u8]) -> u32 {
+pub fn levenshtein_naive<T: PartialEq>(a: &[T], b: &[T]) -> u32 {
     levenshtein_naive_with_opts(a, b, false, LEVENSHTEIN_COSTS).0
+}
+
+/// Returns the Levenshtein distance between two strings using the naive scalar algorithm.
+///
+/// # Arguments
+/// * `a` - first string (&str)
+/// * `b` - second string (&str)
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+/// # use triple_accel::levenshtein::*;
+/// let dist = levenstein_naive_str("abc", "ab");
+///
+/// assert!(dist == 1);
+/// ```
+pub fn levenstein_naive_str(a: &str, b: &str) -> u32 {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    levenshtein_naive(&a, &b)
 }
 
 /// Returns the Levenshtein distance between two strings and optionally, the edit traceback,
@@ -110,7 +130,10 @@ pub fn levenshtein_naive(a: &[u8], b: &[u8]) -> u32 {
 /// assert!(dist == (1, Some(vec![Edit{edit: EditType::Match, count: 2},
 ///                               Edit{edit: EditType::BGap, count: 1}])));
 /// ```
-pub fn levenshtein_naive_with_opts(a: &[u8], b: &[u8], trace_on: bool, costs: EditCosts) -> (u32, Option<Vec<Edit>>) {
+#[inline]
+pub fn levenshtein_naive_with_opts<T>(a: &[T], b: &[T], trace_on: bool, costs: EditCosts) -> (u32, Option<Vec<Edit>>)
+    where T: PartialEq
+{
     let swap = a.len() > b.len(); // swap so that a len <= b len
     let a_new = if swap {b} else {a};
     let a_new_len = a_new.len();
@@ -300,7 +323,10 @@ pub fn levenshtein_naive_k(a: &[u8], b: &[u8], k: u32) -> Option<u32> {
 /// assert!(dist.unwrap() == (1, Some(vec![Edit{edit: EditType::Match, count: 2},
 ///                                        Edit{edit: EditType::BGap, count: 1}])));
 /// ```
-pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool, costs: EditCosts) -> Option<(u32, Option<Vec<Edit>>)> {
+#[inline]
+pub fn levenshtein_naive_k_with_opts<T>(a: &[T], b: &[T], k: u32, trace_on: bool, costs: EditCosts) -> Option<(u32, Option<Vec<Edit>>)>
+    where T: PartialEq
+{
     let swap = a.len() > b.len(); // swap so that a len <= b len
     let a_new = if swap {b} else {a};
     let a_new_len = a_new.len();
@@ -476,6 +502,48 @@ pub fn levenshtein_naive_k_with_opts(a: &[u8], b: &[u8], k: u32, trace_on: bool,
 
     res.reverse();
     Some((dp1[hi - lo - 1], Some(res)))
+}
+
+fn translate_str(chars: &mut Vec<char>, s: &str) -> Option<Vec<u8>> {
+    s.chars().map(|c| match chars.iter().position(|&d| c == d) {
+        Some(i) => Some(i as u8),
+        None => {
+            let idx = chars.len();
+            if idx < 256 {
+                chars.push(c);
+                Some(idx as u8)
+            } else {
+                None
+            }
+        }
+    }).collect()
+}
+
+/// Returns the Levenshtein distance, bounded by a cost threshold `k`, between two utf8 encoded strings, using
+/// SIMD acceleration.
+/// # Arguments
+/// * `a` - first string (&str)
+/// * `b` - second string (&str)
+/// * `k` - maximum number of edits allowed between `a` and `b`
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+/// # use triple_accel::levenshtein::*;
+/// let dist = levenshtein_simd_k_str("abc", "ab", 1);
+///
+/// assert!(dist.unwrap() == 1);
+/// ```
+pub fn levenshtein_simd_k_str(a: &str, b: &str, k: u32) -> Option<u32> {
+    if a.is_ascii() && b.is_ascii() {
+        levenshtein_simd_k(a.as_bytes(), b.as_bytes(), k)
+    } else {
+        let mut chars = Vec::with_capacity(256);
+
+        let a = translate_str(&mut chars, a)?;
+        let b = translate_str(&mut chars, b)?;
+        levenshtein_simd_k(&a, &b, k)
+    }
 }
 
 /// Returns the Levenshtein distance, bounded by a cost threshold `k`, between two strings, using
