@@ -63,9 +63,9 @@ cargo doc
 This library provides routines for both searching for some needle string in a haystack string
 and calculating the edit distance between two strings. Hamming distance (mismatches only),
 Levenshtein distance (mismatches + gaps), and restricted Damerau-Levenshtein distance
-(transpositions + mismatches + gaps) are supported, along with arbitrary edit costs. This
-library provides a simple interface, in addition to powerful lower-level control over the edit
-distance calculations.
+(transpositions + mismatches + gaps) are supported, along with arbitrary edit costs for mismatch
+and gap open/extend. This library provides a simple interface, in addition to powerful lower-level
+control over the edit distance calculations.
 
 At runtime, the implementation for a certain algorithm is selected based on CPU support, going
 down the list:
