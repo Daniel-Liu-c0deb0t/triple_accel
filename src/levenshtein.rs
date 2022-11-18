@@ -831,7 +831,13 @@ macro_rules! create_levenshtein_simd_core {
     ($name:ident, $traceback_name:ident, $jewel:ty, $target:literal) => {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         #[target_feature(enable = $target)]
-        unsafe fn $name(a_old: &[u8], b_old: &[u8], k: u32, trace_on: bool, costs: EditCosts) -> Option<(u32, Option<Vec<Edit>>)> {
+        unsafe fn $name(
+            a: &[u8],
+            b: &[u8],
+            k: u32,
+            trace_on: bool,
+            costs: EditCosts,
+        ) -> Option<(u32, Option<Vec<Edit>>)> {
             #[cfg(feature = "debug")]
             {
                 println!(
@@ -843,10 +849,9 @@ macro_rules! create_levenshtein_simd_core {
 
             // swap a and b so that a is shorter than b, if applicable
             // makes operations later on slightly easier, since length of a <= length of b
-            let swap = a_old.len() > b_old.len();
-            let a = if swap {b_old} else {a_old};
+            let swap = a.len() > b.len();
+            let (a, b) = if swap { (b, a) } else { (a, b) };
             let a_len = a.len();
-            let b = if swap {a_old} else {b_old};
             let b_len = b.len();
             let unit_k = cmp::min(
                 (k.saturating_sub(costs.start_gap_cost as u32) / (costs.gap_cost as u32)) as usize,
