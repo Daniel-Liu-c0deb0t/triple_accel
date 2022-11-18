@@ -1445,16 +1445,13 @@ pub fn rdamerau(a: &[u8], b: &[u8]) -> u32 {
 /// ```
 pub fn levenshtein_exp(a: &[u8], b: &[u8]) -> u32 {
     let mut k = 30;
-    let mut res = levenshtein_simd_k(a, b, k);
-
     // exponential search
-    while res.is_none() {
-        k <<= 1;
-        res = levenshtein_simd_k(a, b, k);
+    loop {
+        if let Some(res) = levenshtein_simd_k(a, b, k) {
+            return res;
+        }
+        k *= 2;
     }
-
-    // should not panic
-    res.unwrap()
 }
 
 /// Returns the restricted Damerau-Levenshtein distance between two strings using exponential
@@ -1479,16 +1476,14 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8]) -> u32 {
 /// ```
 pub fn rdamerau_exp(a: &[u8], b: &[u8]) -> u32 {
     let mut k = 30;
-    let mut res = levenshtein_simd_k_with_opts(a, b, k, false, RDAMERAU_COSTS);
 
     // exponential search
-    while res.is_none() {
-        k <<= 1;
-        res = levenshtein_simd_k_with_opts(a, b, k, false, RDAMERAU_COSTS);
+    loop {
+        if let Some(res) = levenshtein_simd_k_with_opts(a, b, k, false, RDAMERAU_COSTS) {
+            return res.0;
+        }
+        k *= 2;
     }
-
-    // should not panic
-    res.unwrap().0
 }
 
 /// Returns an iterator over the best `Match`s by searching through the text `haystack` for the
