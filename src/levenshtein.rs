@@ -1453,6 +1453,50 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8]) -> u32 {
     }
 }
 
+/// Returns the Levenshtein distance, bounded by a cost threshold `k`, between two strings and optionally,
+/// the edit traceback, using exponential search and SIMD acceleration, with extra options.
+///
+/// This will return `None` if the Levenshtein distance between `a` and `b` is greater than the
+/// threshold `k`.
+/// This should be much faster than `levenshtein_naive_with_opts` and
+/// `levenshtein_naive_k_with_opts`.
+/// Internally, this will automatically use AVX or SSE vectors with 8-bit, 16-bit, or 32-bit elements
+/// to represent anti-diagonals in the dynamic programming matrix for calculating Levenshtein distance.
+/// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to
+/// `levenshtein_naive_k_with_opts`.
+///
+/// # Arguments
+/// * `a` - first string (slice)
+/// * `b` - second string (slice)
+/// * `k` - maximum number of cost allowed between `a` and `b`
+/// * `trace_on` - whether to return the traceback, the sequence of edits between `a` and `b`
+/// * `costs` - `EditCosts` struct for the cost of each edit operation
+///
+/// # Example
+/// ```
+/// # use triple_accel::*;
+/// # use triple_accel::levenshtein::*;
+/// let dist = levenshtein_simd_k_with_opts(b"abc", b"ab", 1, true, LEVENSHTEIN_COSTS);
+///
+/// assert!(dist.unwrap() == (1, Some(vec![Edit{edit: EditType::Match, count: 2},
+///                                        Edit{edit: EditType::BGap, count: 1}])));
+/// ```
+pub fn levenshtein_exp_with_opts(
+    a: &[u8],
+    b: &[u8],
+    trace_on: bool,
+    costs: EditCosts,
+) -> (u32, Option<Vec<Edit>>) {
+    let mut k = 30;
+    // exponential search
+    loop {
+        if let Some(res) = levenshtein_simd_k_with_opts(a, b, k, trace_on, costs) {
+            return res;
+        }
+        k *= 2;
+    }
+}
+
 /// Returns the restricted Damerau-Levenshtein distance between two strings using exponential
 /// search and SIMD acceleration.
 ///
