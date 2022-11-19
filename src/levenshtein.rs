@@ -13,7 +13,6 @@
 
 use super::jewel::*;
 use super::*;
-use std::*;
 
 /// A struct holding the edit costs for mismatches, gaps, and possibly transpositions.
 ///
@@ -53,10 +52,10 @@ impl EditCosts {
         }
 
         Self {
-            mismatch_cost: mismatch_cost,
-            gap_cost: gap_cost,
-            start_gap_cost: start_gap_cost,
-            transpose_cost: transpose_cost,
+            mismatch_cost,
+            gap_cost,
+            start_gap_cost,
+            transpose_cost,
         }
     }
 
