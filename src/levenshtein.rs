@@ -1,7 +1,7 @@
 //! This module provides many Levenshtein distance routines.
 //!
 //! These distance functions share the same efficient underlying SIMD-accelerated implementation:
-//! * `levenshtein_exp` for low number of edits, otherwise `levenshtein`
+//! * `levenshtein_exp` or `levenshtein_exp_with_opts` for low number of edits, otherwise `levenshtein`
 //! * `rdamerau_exp` for low number of edits, otherwise `rdamerau`
 //! * `levenshtein_simd_k`
 //! * `levenshtein_simd_k_with_opts`
@@ -1453,22 +1453,18 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8]) -> u32 {
     }
 }
 
-/// Returns the Levenshtein distance, bounded by a cost threshold `k`, between two strings and optionally,
-/// the edit traceback, using exponential search and SIMD acceleration, with extra options.
+/// Returns the Levenshtein distance between two strings, and optionally, the edit traceback,
+/// using exponential search and SIMD acceleration. Extra options can be specified.
 ///
-/// This will return `None` if the Levenshtein distance between `a` and `b` is greater than the
-/// threshold `k`.
-/// This should be much faster than `levenshtein_naive_with_opts` and
-/// `levenshtein_naive_k_with_opts`.
-/// Internally, this will automatically use AVX or SSE vectors with 8-bit, 16-bit, or 32-bit elements
-/// to represent anti-diagonals in the dynamic programming matrix for calculating Levenshtein distance.
-/// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to
-/// `levenshtein_naive_k_with_opts`.
+/// This may be much more efficient than `levenshtein` if the number of edits between `a` and `b`
+/// is expected to be small.
+/// Internally, this will call `levenshtein_simd_k_with_opts` with values of `k` determined through
+/// exponential search.
+/// If AVX2 or SSE4.1 is not supported, then this will automatically fall back to a scalar alternative.
 ///
 /// # Arguments
 /// * `a` - first string (slice)
 /// * `b` - second string (slice)
-/// * `k` - maximum number of cost allowed between `a` and `b`
 /// * `trace_on` - whether to return the traceback, the sequence of edits between `a` and `b`
 /// * `costs` - `EditCosts` struct for the cost of each edit operation
 ///
@@ -1476,7 +1472,7 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8]) -> u32 {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-/// let dist = levenshtein_simd_k_with_opts(b"abc", b"ab", 1, true, LEVENSHTEIN_COSTS);
+/// let dist = levenshtein_exp_with_opts(b"abc", b"ab", true, LEVENSHTEIN_COSTS);
 ///
 /// assert!(dist.unwrap() == (1, Some(vec![Edit{edit: EditType::Match, count: 2},
 ///                                        Edit{edit: EditType::BGap, count: 1}])));
