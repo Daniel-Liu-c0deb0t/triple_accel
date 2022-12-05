@@ -1474,8 +1474,8 @@ pub fn levenshtein_exp(a: &[u8], b: &[u8]) -> u32 {
 /// # use triple_accel::levenshtein::*;
 /// let dist = levenshtein_exp_with_opts(b"abc", b"ab", true, LEVENSHTEIN_COSTS);
 ///
-/// assert!(dist.unwrap() == (1, Some(vec![Edit{edit: EditType::Match, count: 2},
-///                                        Edit{edit: EditType::BGap, count: 1}])));
+/// assert!(dist == (1, Some(vec![Edit{edit: EditType::Match, count: 2},
+///                               Edit{edit: EditType::BGap, count: 1}])));
 /// ```
 pub fn levenshtein_exp_with_opts(
     a: &[u8],
