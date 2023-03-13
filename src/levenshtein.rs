@@ -116,11 +116,11 @@ pub fn levenshtein_naive<T: PartialEq>(a: &[T], b: &[T]) -> u32 {
 /// ```
 /// # use triple_accel::*;
 /// # use triple_accel::levenshtein::*;
-/// let dist = levenstein_naive_str("abc", "ab");
+/// let dist = levenshtein_naive_str("abc", "ab");
 ///
 /// assert!(dist == 1);
 /// ```
-pub fn levenstein_naive_str(a: &str, b: &str) -> u32 {
+pub fn levenshtein_naive_str(a: &str, b: &str) -> u32 {
     let a: Vec<char> = a.chars().collect();
     let b: Vec<char> = b.chars().collect();
     levenshtein_naive(&a, &b)
